@@ -3,6 +3,11 @@
 Frontend-only dashboard. This repository intentionally contains no ZWAP
 calculation engine, thresholds, Alpaca credentials, or market-data downloader.
 
+Users supply their own Alpaca credentials. Archived historical sessions require
+Alpaca Algo Trader Plus market-data access; the free Basic plan is limited to
+the latest 15 minutes for historical API queries and is not sufficient for this
+workflow.
+
 For the private local test:
 
 1. Copy `config.example.js` to `config.js` and set the temporary EC2 test token.
