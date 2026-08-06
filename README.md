@@ -79,10 +79,12 @@ derived EXZ calculation is performed by Foxchase Trading’s private service.
 The public repository intentionally contains no live endpoint, activation
 token, or private-service credentials. After purchasing live access, use the
 Whop software license key associated with your EXZ Live Dashboard membership
-in the dashboard’s **Whop license key** field. The dashboard exchanges that
-key for a short-lived entitlement token and then uses the private Foxchase
-service for same-day calculations. Do not add private live configuration or
-tokens to this public repository.
+in the dashboard’s **Whop license key or activation code** field. Existing
+Foxchase Trading members who receive complimentary access may instead use a
+one-time activation code issued by Foxchase Trading. The dashboard exchanges
+the key or code for a short-lived entitlement token and then uses the private
+Foxchase service for same-day calculations. Do not add private live
+configuration or tokens to this public repository.
 
 ## Run locally
 
