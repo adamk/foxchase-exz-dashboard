@@ -84,8 +84,9 @@ activation flow.
 
 ## Run locally
 
-For macOS, after exporting your Alpaca keys, the one-command launcher starts
-both local processes and opens the dashboard automatically:
+For macOS, the one-command launcher starts both local processes and opens the
+dashboard automatically. It reuses the existing `~/.foxchase_alpaca_source.env`
+file when present; otherwise export your Alpaca keys first:
 
 ```bash
 ./run_exz_local.sh

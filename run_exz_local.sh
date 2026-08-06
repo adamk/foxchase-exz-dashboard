@@ -14,8 +14,31 @@ WEB_LOG="${TMPDIR:-/tmp}/foxchase-exz-web.log"
 
 cd "$SCRIPT_DIR"
 
+# Reuse the existing local Alpaca environment without sourcing unrelated
+# application settings. Only known Alpaca variable names are imported.
+ENV_FILE="${ZWAP_ENV_FILE:-}"
+if [[ -z "$ENV_FILE" && -f "$SCRIPT_DIR/.env" ]]; then
+  ENV_FILE="$SCRIPT_DIR/.env"
+fi
+if [[ -z "$ENV_FILE" && -f "$HOME/.foxchase_alpaca_source.env" ]]; then
+  ENV_FILE="$HOME/.foxchase_alpaca_source.env"
+fi
+if [[ -z "$ENV_FILE" && -f "$HOME/foxchasetrading.com/.env" ]]; then
+  ENV_FILE="$HOME/foxchasetrading.com/.env"
+fi
+if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+  while IFS='=' read -r name value; do
+    case "$name" in
+      ALPACA_API_KEY|ALPACA_API_SECRET|ALPACA_SECRET_KEY|ALPACA_KEY|ALPACA_SECRET)
+        export "$name=$value" ;;
+    esac
+  done < "$ENV_FILE"
+fi
+export APCA_API_KEY_ID="${APCA_API_KEY_ID:-${ALPACA_API_KEY:-}}"
+export APCA_API_SECRET_KEY="${APCA_API_SECRET_KEY:-${ALPACA_API_SECRET:-${ALPACA_SECRET_KEY:-}}}"
+
 if [[ -z "${APCA_API_KEY_ID:-}" || -z "${APCA_API_SECRET_KEY:-}" ]]; then
-  print -u2 "Set APCA_API_KEY_ID and APCA_API_SECRET_KEY in this terminal first."
+  print -u2 "No Alpaca credentials found. Set APCA_API_KEY_ID/APCA_API_SECRET_KEY or configure $HOME/.foxchase_alpaca_source.env."
   exit 1
 fi
 
@@ -27,7 +50,14 @@ fi
 if curl -fsS "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1; then
   print "Foxchase EXZ is already running at http://127.0.0.1:${WEB_PORT}/"
   if (( $+commands[open] )); then
-    open "http://127.0.0.1:${WEB_PORT}/"
+    open "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 || true
+  fi
+  exit 0
+fi
+if lsof -nP -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  print "Port ${WEB_PORT} is already occupied; leaving the existing dashboard process untouched."
+  if (( $+commands[open] )); then
+    open "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 || true
   fi
   exit 0
 fi
@@ -44,16 +74,12 @@ if curl -fsS "http://127.0.0.1:${CONNECTOR_PORT}/healthz" >/dev/null 2>&1; then
   CONNECTOR_PID=""
 else
   if lsof -nP -iTCP:"$CONNECTOR_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    print -u2 "Port $CONNECTOR_PORT is already in use by another process."
-    exit 1
+    print "Port ${CONNECTOR_PORT} is already occupied; leaving the existing connector untouched."
+    CONNECTOR_PID=""
+  else
+    python3 local_connector.py >"$CONNECTOR_LOG" 2>&1 &
+    CONNECTOR_PID=$!
   fi
-  python3 local_connector.py >"$CONNECTOR_LOG" 2>&1 &
-  CONNECTOR_PID=$!
-fi
-
-if lsof -nP -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  print -u2 "Port $WEB_PORT is already in use by another process."
-  exit 1
 fi
 
 python3 -m http.server "$WEB_PORT" --bind 127.0.0.1 >"$WEB_LOG" 2>&1 &
@@ -78,7 +104,7 @@ print "Connector log: $CONNECTOR_LOG"
 print "Web log: $WEB_LOG"
 
 if (( $+commands[open] )); then
-  open "http://127.0.0.1:${WEB_PORT}/"
+  open "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 || true
 fi
 
 wait "$WEB_PID"
