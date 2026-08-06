@@ -12,6 +12,8 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+import re
 
 from zwap_client import _download_payload
 from datetime import date as date_type, datetime
@@ -20,6 +22,32 @@ from zoneinfo import ZoneInfo
 
 _cache_lock = threading.Lock()
 _payload_cache: dict[tuple[str, int], dict] = {}
+_date_pattern = re.compile(r"^data_(\d{4}-\d{2}-\d{2})_meta\.json$")
+
+
+def _cached_sessions() -> list[dict]:
+    """Return locally cached date/regime metadata; never reads market bars."""
+    cache_root = Path(os.getenv(
+        "ZWAP_CACHE_DIR",
+        str(Path(__file__).resolve().parent.parent / "zwap_live_dashboard"),
+    ))
+    sessions: dict[str, str] = {}
+    try:
+        for path in cache_root.glob("data_*_meta.json"):
+            match = _date_pattern.match(path.name)
+            if not match:
+                continue
+            try:
+                metadata = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                metadata = {}
+            sessions[match.group(1)] = str(metadata.get("regime", "UNKNOWN"))
+    except OSError:
+        pass
+    with _cache_lock:
+        for session_date, _offset in _payload_cache:
+            sessions.setdefault(session_date, "UNKNOWN")
+    return [{"date": day, "regime": sessions[day]} for day in sorted(sessions)]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -27,6 +55,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/healthz":
             self._json({"ok": True, "service": "zwap-local-data-connector"})
+            return
+        if parsed.path == "/api/sessions":
+            self._json({"sessions": _cached_sessions()})
             return
         if parsed.path != "/api/session":
             self.send_error(404)

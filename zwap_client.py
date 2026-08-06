@@ -24,6 +24,83 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 
+def _cache_root() -> Path:
+    return Path(os.getenv(
+        "ZWAP_CACHE_DIR",
+        str(Path(__file__).resolve().parent.parent / "zwap_live_dashboard"),
+    ))
+
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _cached_payload(day: date_type, offset: int) -> dict | None:
+    """Load an existing local session cache before making Alpaca requests."""
+    root = _cache_root()
+    day_text = day.isoformat()
+    spy_data = _read_json(root / f"data_{day_text}_spy_bars.json")
+    previous_spy_data = _read_json(root / f"data_{day_text}_previous_spy_bars.json")
+    if not isinstance(spy_data, dict) or not isinstance(previous_spy_data, dict):
+        return None
+    spy_bars = spy_data.get("bars", [])
+    previous_spy_bars = previous_spy_data.get("bars", [])
+    if not isinstance(spy_bars, list) or not isinstance(previous_spy_bars, list):
+        return None
+
+    metadata = _read_json(root / f"data_{day_text}_meta.json") or {}
+    try:
+        atm = float(metadata["atm_strike"])
+    except (KeyError, TypeError, ValueError):
+        opening = next((row for row in spy_bars if row.get("t", "") >= _utc_at(day, 9, 30)), None)
+        if not opening:
+            return None
+        opening_spot = float(opening.get("o") or opening.get("c"))
+        atm = math.floor(opening_spot + 0.5)
+    target = int(atm) + int(offset)
+
+    candidates: list[tuple[str, list]] = []
+    for path in root.glob(f"data_{day_text}_SPY{day:%y%m%d}C*_option_bars.json"):
+        payload = _read_json(path)
+        bars = payload.get("bars") if isinstance(payload, dict) else None
+        if not isinstance(bars, dict):
+            continue
+        for symbol, rows in bars.items():
+            if isinstance(rows, list) and rows:
+                candidates.append((symbol, rows))
+    base_payload = _read_json(root / f"data_{day_text}_option_bars.json")
+    if isinstance(base_payload, dict) and isinstance(base_payload.get("bars"), dict):
+        for symbol, rows in base_payload["bars"].items():
+            if isinstance(rows, list) and rows:
+                candidates.append((symbol, rows))
+    if not candidates:
+        return None
+    symbol, option_rows = min(
+        candidates,
+        key=lambda item: (abs(int(item[0][-8:]) / 1000 - target), -len(item[1])),
+    )
+
+    previous_options = _read_json(root / f"data_{day_text}_{symbol}_previous_option_bars.json")
+    if not isinstance(previous_options, dict):
+        previous_options = _read_json(root / f"data_{day_text}_previous_option_bars.json")
+    previous_by_symbol = previous_options.get("bars", {}) if isinstance(previous_options, dict) else {}
+    previous_option_bars = previous_by_symbol.get(symbol, []) if isinstance(previous_by_symbol, dict) else []
+    if not isinstance(previous_option_bars, list) or not previous_option_bars:
+        return None
+    return {
+        "session_date": day_text,
+        "option_symbol": symbol,
+        "option_strike": int(int(symbol[-8:]) / 1000),
+        "spy_bars": spy_bars,
+        "option_bars": option_rows,
+        "previous_spy_bars": previous_spy_bars,
+        "previous_option_bars": previous_option_bars,
+    }
+
+
 def _utc_at(day: date_type, hour: int, minute: int = 0) -> str:
     eastern = ZoneInfo("America/New_York")
     value = datetime.combine(day, time_type(hour, minute), tzinfo=eastern).astimezone(timezone.utc)
@@ -57,6 +134,9 @@ def _occ_symbol(day: date_type, strike: int) -> str:
 
 
 def _download_payload(day: date_type, offset: int) -> dict:
+    cached = _cached_payload(day, offset)
+    if cached is not None:
+        return cached
     stock_start, stock_end = _utc_at(day, 4), _utc_at(day, 12)
     stock = _get("/v2/stocks/SPY/bars", {
         "timeframe": "1Min", "start": stock_start, "end": stock_end,

@@ -7,7 +7,7 @@
   <style>
     :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--muted:#8b949e;--gold:#f2cc60;--blue:#58a6ff}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e6edf3;font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    main{max-width:1100px;margin:0 auto;padding:24px}.sub{color:var(--muted);margin:4px 0 18px}.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);padding:12px;border-radius:8px}.toolbar input,.toolbar button{background:#0d1117;color:#e6edf3;border:1px solid var(--line);border-radius:5px;padding:6px 9px}.toolbar button{cursor:pointer}.toolbar button:disabled{opacity:.5;cursor:wait}.status{color:#d29922;margin:12px 0;min-height:20px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.card,.chart{background:var(--panel);border:1px solid var(--line);border-radius:8px}.card{padding:12px}.label{color:var(--muted);font-size:12px}.value{font-size:20px;font-weight:600;margin-top:4px}.chart{margin-top:12px;padding:12px}.chart h2{font-size:14px;margin:0 0 8px}.study{width:100%;height:240px;display:block;background:#0d1117;border-radius:5px}.note{color:var(--muted);font-size:12px;margin-top:8px}@media(max-width:700px){.cards{grid-template-columns:1fr 1fr}main{padding:14px}}
+    main{max-width:1100px;margin:0 auto;padding:24px}.sub{color:var(--muted);margin:4px 0 18px}.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);padding:12px;border-radius:8px}.toolbar input,.toolbar select,.toolbar button{background:#0d1117;color:#e6edf3;border:1px solid var(--line);border-radius:5px;padding:6px 9px}.toolbar button{cursor:pointer}.toolbar button:disabled{opacity:.5;cursor:wait}.status{color:#d29922;margin:12px 0;min-height:20px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.card,.chart{background:var(--panel);border:1px solid var(--line);border-radius:8px}.card{padding:12px}.label{color:var(--muted);font-size:12px}.value{font-size:20px;font-weight:600;margin-top:4px}.chart{margin-top:12px;padding:12px}.chart h2{font-size:14px;margin:0 0 8px}.study{width:100%;height:240px;display:block;background:#0d1117;border-radius:5px}.note{color:var(--muted);font-size:12px;margin-top:8px}@media(max-width:700px){.cards{grid-template-columns:1fr 1fr}main{padding:14px}}
   </style>
 </head>
 <body>
@@ -16,6 +16,8 @@
   <div class="sub">User-owned Alpaca data · server-side ZWAP computation</div>
   <div class="toolbar">
     <label>Date <input id="date" type="date"></label>
+    <label>Cached session <select id="sessionPicker"><option value="">Loading…</option></select></label>
+    <label>Regime <select id="regimeFilter"><option value="ALL">All</option><option>R1</option><option>R2</option><option>R3</option><option>R4</option><option>R5</option><option>R6</option></select></label>
     <span>Strike</span>
     <button type="button" class="strike-button" data-step="-1">−$1</button>
     <button type="button" class="strike-button" data-offset="0">ATM</button>
@@ -31,7 +33,7 @@
     <div class="card"><div class="label">Latest EX z-score</div><div id="latest" class="value">—</div></div>
   </div>
   <section class="chart"><h2>Selected call</h2><canvas id="price" class="study" width="1000" height="240"></canvas></section>
-  <section class="chart"><h2>Extrinsic-value z-score</h2><canvas id="z" class="study" width="1000" height="240"></canvas><div class="note">The browser renders returned results; calculation logic remains on EC2.</div></section>
+  <section class="chart"><h2>Extrinsic-value z-score</h2><canvas id="z" class="study" width="1000" height="240"></canvas><div class="note">Computed from the selected SPY session and call contract.</div></section>
 </main>
 <script src="config.js"></script>
 <script src="app.js"></script>
