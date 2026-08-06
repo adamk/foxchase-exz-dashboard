@@ -48,7 +48,7 @@ in the browser code or sent to Foxchase's public website.
 The example configuration uses the public, historical-only calculation relay:
 
 ```js
-computeUrl: 'https://bot.foxchasetrading.com/api/public/zwap/historical'
+computeUrl: 'https://exz-api.foxchasetrading.com/api/public/exz/historical'
 ```
 
 Historical requests are accepted only for completed sessions, use the bars

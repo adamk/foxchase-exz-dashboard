@@ -6,7 +6,7 @@ response. It does not contain the ZWAP calculation logic.
 
 Example:
   python3 zwap_client.py --date 2026-08-04 --offset 1 \
-    --api-url https://bot.foxchasetrading.com/api/public/zwap/historical
+    --api-url https://exz-api.foxchasetrading.com/api/public/exz/historical
 """
 
 from __future__ import annotations
@@ -197,12 +197,12 @@ def main() -> int:
     parser.add_argument("--offset", type=int, default=1, help="strike offset from opening ATM")
     parser.add_argument("--api-url", default=os.getenv(
         "ZWAP_API_URL",
-        "https://bot.foxchasetrading.com/api/public/zwap/historical",
+        "https://exz-api.foxchasetrading.com/api/public/exz/historical",
     ))
     parser.add_argument("--token", default=os.getenv("ZWAP_HISTORICAL_TOKEN", ""))
     parser.add_argument("--output", type=Path, help="optional local JSON output path")
     args = parser.parse_args()
-    public_historical = "/api/public/zwap/historical" in args.api_url
+    public_historical = "/api/public/exz/historical" in args.api_url
     if not public_historical and not args.token:
         raise SystemExit("set --token or ZWAP_HISTORICAL_TOKEN for a private endpoint")
     payload = _download_payload(date_type.fromisoformat(args.date), max(-10, min(10, args.offset)))
