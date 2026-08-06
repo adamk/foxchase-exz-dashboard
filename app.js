@@ -12,7 +12,8 @@
   async function load(){const date=$('date').value,offset=Number($('offset').value||1);if(!date){status('Choose a date first.');return}if(!cfg.connectorUrl||!cfg.computeUrl||!cfg.computeToken){status('Local test config is incomplete. Copy config.example.js to config.js and set the EC2 token.');return}$('load').disabled=true;status('Fetching your Alpaca bars locally…');try{const source=await fetch(`${cfg.connectorUrl}?date=${encodeURIComponent(date)}&offset=${offset}`);const payload=await source.json();if(!source.ok)throw new Error(payload.error||'local connector failed');status('Computing on private EC2…');const response=await fetch(cfg.computeUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${cfg.computeToken}`},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.error||'EC2 calculation failed');const p=result.series||[];const z=p.filter(v=>v.ex_z!=null);$('contract').textContent=result.option_symbol||'—';$('regime').textContent=result.regime||'—';$('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'warming up';drawPrice(p);drawZ(p);status(`Loaded ${result.option_symbol} · ${p.length} bars · ${result.warmup_bars||0} warm-up bars.`)}catch(e){status(`Error: ${e.message}`)}finally{$('load').disabled=false}}
   $('load').addEventListener('click',load);
   document.querySelectorAll('.strike-button').forEach(button=>button.addEventListener('click',()=>{
-    $('offset').value=button.dataset.offset;
+    const next=button.dataset.offset!==undefined?Number(button.dataset.offset):Number($('offset').value||0)+Number(button.dataset.step||0);
+    $('offset').value=Math.max(-10,Math.min(10,next));
     if($('date').value) load();
   }));
   heartbeat();setInterval(heartbeat,30000);addEventListener('resize',()=>{});
