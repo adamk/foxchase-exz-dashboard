@@ -77,12 +77,12 @@ still reads market data from the customer’s own Alpaca account, while the
 derived EXZ calculation is performed by Foxchase Trading’s private service.
 
 The public repository intentionally contains no live endpoint, activation
-token, or private-service credentials. After live access is approved, Foxchase
-Trading provides an activation code separately. Enter that code in the
-dashboard’s **Live activation code** field; the dashboard exchanges it for a
-short-lived entitlement token and then uses the private Foxchase service for
-same-day calculations. Do not add private live configuration or tokens to this
-public repository.
+token, or private-service credentials. After purchasing live access, use the
+Whop software license key associated with your EXZ Live Dashboard membership
+in the dashboard’s **Whop license key** field. The dashboard exchanges that
+key for a short-lived entitlement token and then uses the private Foxchase
+service for same-day calculations. Do not add private live configuration or
+tokens to this public repository.
 
 ## Run locally
 
