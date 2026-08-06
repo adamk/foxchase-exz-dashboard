@@ -5,5 +5,5 @@ window.ZWAP_CONFIG = {
   // access uses a separate authenticated endpoint supplied after purchase.
   computeUrl: 'https://exz-api.foxchasetrading.com/api/public/exz/historical',
   computeToken: '',
-  presenceUrl: 'http://127.0.0.1:5070/api/v1/presence'
+  presenceUrl: 'https://exz-api.foxchasetrading.com/api/public/exz-presence'
 };

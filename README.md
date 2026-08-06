@@ -117,6 +117,12 @@ later views of the same date and strike are faster.
 The dashboard deliberately blocks the current day and future dates in the
 historical view. Live-session access is a separate permissioned service.
 
+The default configuration also sends an approximate anonymous presence
+heartbeat so the Foxchase homepage can show active sessions. It uses only a
+browser-generated opaque session ID with a short expiry; it does not send an
+IP address, Alpaca credentials, or market data. Set `presenceUrl` to an empty
+string in `config.js` if you prefer to disable that heartbeat.
+
 ## Files and security
 
 - `index.html` and `app.js`: dashboard UI and chart rendering.
