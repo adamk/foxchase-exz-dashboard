@@ -64,6 +64,8 @@ def _cached_payload(day: date_type, offset: int) -> dict | None:
 
     candidates: list[tuple[str, list]] = []
     for path in root.glob(f"data_{day_text}_SPY{day:%y%m%d}C*_option_bars.json"):
+        if "_previous_option_bars.json" in path.name:
+            continue
         payload = _read_json(path)
         bars = payload.get("bars") if isinstance(payload, dict) else None
         if not isinstance(bars, dict):
