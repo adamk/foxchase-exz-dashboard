@@ -1,6 +1,7 @@
-# Foxchase ZWAP web dashboard
+# Foxchase EXZ web dashboard
 
-This is the browser-facing portion of the Foxchase ZWAP study. The repository
+This is the browser-facing portion of the Foxchase SPY extrinsic-value z-score
+study. The repository
 intentionally contains no ZWAP calculation engine, thresholds, Alpaca
 credentials, or market-data downloader. The browser sends user-owned,
 historical SPY bars to a rate-limited historical relay and renders the returned
