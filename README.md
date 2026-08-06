@@ -40,9 +40,22 @@ export APCA_API_KEY_ID="your_alpaca_key"
 export APCA_API_SECRET_KEY="your_alpaca_secret"
 ```
 
-The connector keeps those credentials local and sends only the requested,
-normalized historical bars to the calculation service. They are never placed
-in the browser code or sent to Foxchase's public website.
+## Privacy and data flow
+
+- Your Alpaca credentials are used only by the local connector. They are not
+  placed in browser code or sent to Foxchase Trading.
+- Historical bars are downloaded through your own Alpaca account and cached
+  locally on your computer. Foxchase Trading does not provide or redistribute
+  Alpaca market data.
+- For a historical calculation, the client sends only the selected,
+  normalized bars over HTTPS to the relay. The public relay does not retain
+  raw bars; it returns the derived series to the dashboard.
+- The proprietary EXZ calculation engine, thresholds, and decision logic are
+  not included in this repository and remain server-side.
+- The optional homepage presence counter uses only a browser-generated opaque
+  session ID with a short expiry. It does not use or store your IP address,
+  Alpaca credentials, account information, or market data. Set `presenceUrl`
+  to an empty string in `config.js` to disable the heartbeat.
 
 ## Historical mode
 
@@ -54,7 +67,7 @@ computeUrl: 'https://exz-api.foxchasetrading.com/api/public/exz/historical'
 
 Historical requests are accepted only for completed sessions, use the bars
 downloaded with your own Alpaca credentials, and are rate-limited per anonymous
-browser session. No raw bars are stored by the relay.
+browser session.
 
 ## Live mode and private calculation service
 
@@ -116,12 +129,6 @@ later views of the same date and strike are faster.
 
 The dashboard deliberately blocks the current day and future dates in the
 historical view. Live-session access is a separate permissioned service.
-
-The default configuration also sends an approximate anonymous presence
-heartbeat so the Foxchase homepage can show active sessions. It uses only a
-browser-generated opaque session ID with a short expiry; it does not send an
-IP address, Alpaca credentials, or market data. Set `presenceUrl` to an empty
-string in `config.js` if you prefer to disable that heartbeat.
 
 ## Files and security
 
