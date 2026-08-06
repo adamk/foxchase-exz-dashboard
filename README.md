@@ -69,31 +69,17 @@ Historical requests are accepted only for completed sessions, use the bars
 downloaded with your own Alpaca credentials, and are rate-limited per anonymous
 browser session.
 
-## Live mode and private calculation service
+## Live/current-day access
 
-An authorized live configuration may instead point to a private endpoint and
-include a short-lived token:
+Live/current-day calculations are a separate paid Foxchase Trading service.
+Customers do not host or provide the calculation engine: the local connector
+still reads market data from the customer’s own Alpaca account, while the
+derived EXZ calculation is performed by Foxchase Trading’s private service.
 
-```js
-window.ZWAP_CONFIG = {
-  connectorUrl: 'http://127.0.0.1:8789/api/session',
-  computeUrl: 'https://your-private-exz-endpoint/api/v1/live/calculate',
-  computeToken: 'YOUR_SHORT_LIVED_LIVE_TOKEN',
-  presenceUrl: 'http://127.0.0.1:5070/api/v1/presence'
-};
-```
-
-If the service is reached through SSH, create a local tunnel in a second
-terminal. Replace the host and user with the values supplied by the service
-operator:
-
-```bash
-ssh -N -L 5070:127.0.0.1:5070 YOUR_USER@YOUR_PRIVATE_HOST
-```
-
-The live service token is not included in this repository. Each authorized
-user must receive their own short-lived token through a separate secure
-activation flow.
+The public repository intentionally contains no live endpoint, activation
+token, or private-service credentials. After live access is approved, Foxchase
+Trading provides the required activation instructions separately. Do not add
+private live configuration or tokens to this public repository.
 
 ## Run locally
 
