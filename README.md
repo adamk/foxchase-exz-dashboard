@@ -13,8 +13,10 @@ series.
 - Alpaca Algo Trader Plus for archived historical option sessions. Alpaca's
   free Basic plan is limited to recent data and is not sufficient for this
   historical workflow.
-- An authorized connection to a compatible private ZWAP calculation service.
-  The public repository does not include that service or its access token.
+- For historical mode, no Foxchase token is required; the public historical
+  relay is rate-limited.
+- Live/current-day mode requires a separate paid entitlement and an authorized
+  connection to the private live calculation service.
 
 ## Install
 
@@ -25,7 +27,8 @@ python3 --version
 cp config.example.js config.js
 ```
 
-Do not commit `config.js`. It contains the private calculation-service token.
+Do not commit `config.js`. It may contain a private live calculation-service
+token if you are authorized for live access.
 
 ## Configure Alpaca
 
@@ -40,15 +43,28 @@ The connector keeps those credentials local and sends only the requested,
 normalized historical bars to the calculation service. They are never placed
 in the browser code or sent to Foxchase's public website.
 
-## Connect to the calculation service
+## Historical mode
 
-The default `config.js` expects the service on local port `5070`:
+The example configuration uses the public, historical-only calculation relay:
+
+```js
+computeUrl: 'https://bot.foxchasetrading.com/api/public/zwap/historical'
+```
+
+Historical requests are accepted only for completed sessions, use the bars
+downloaded with your own Alpaca credentials, and are rate-limited per anonymous
+browser session. No raw bars are stored by the relay.
+
+## Live mode and private calculation service
+
+An authorized live configuration may instead point to a private endpoint and
+include a short-lived token:
 
 ```js
 window.ZWAP_CONFIG = {
   connectorUrl: 'http://127.0.0.1:8789/api/session',
-  computeUrl: 'http://127.0.0.1:5070/api/v1/historical/calculate',
-  computeToken: 'YOUR_PRIVATE_SERVICE_TOKEN',
+  computeUrl: 'https://your-private-zwap-endpoint/api/v1/live/calculate',
+  computeToken: 'YOUR_SHORT_LIVED_LIVE_TOKEN',
   presenceUrl: 'http://127.0.0.1:5070/api/v1/presence'
 };
 ```
@@ -61,8 +77,9 @@ operator:
 ssh -N -L 5070:127.0.0.1:5070 YOUR_USER@YOUR_PRIVATE_HOST
 ```
 
-The service token is not included in this repository. Each authorized user
-must receive their own token through a separate secure channel.
+The live service token is not included in this repository. Each authorized
+user must receive their own short-lived token through a separate secure
+activation flow.
 
 ## Run locally
 
@@ -84,15 +101,15 @@ session**. The first request downloads and caches the selected session locally;
 later views of the same date and strike are faster.
 
 The dashboard deliberately blocks the current day and future dates in the
-historical view. Live-session access, if offered, is a separate permissioned
-service.
+historical view. Live-session access is a separate permissioned service.
 
 ## Files and security
 
 - `index.html` and `app.js`: dashboard UI and chart rendering.
 - `local_connector.py` and `zwap_client.py`: local, user-owned Alpaca adapter.
 - `config.example.js`: safe configuration template.
-- `config.js`: local secret-bearing configuration; never commit or publish it.
+- `config.js`: local configuration that may contain a live token; never commit
+  or publish it.
 
 This project is for research and visualization, not trade execution. Keep API
 credentials, service tokens, and cached market data private, and follow the
