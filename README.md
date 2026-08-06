@@ -2,7 +2,7 @@
 
 This is the browser-facing portion of the Foxchase SPY extrinsic-value z-score
 study. The repository
-intentionally contains no ZWAP calculation engine, thresholds, Alpaca
+intentionally contains no EXZ calculation engine, thresholds, Alpaca
 credentials, or market-data downloader. The browser sends user-owned,
 historical SPY bars to a rate-limited historical relay and renders the returned
 series. The relay forwards the request to the private calculation engine.
@@ -22,8 +22,8 @@ series. The relay forwards the request to the private calculation engine.
 ## Install
 
 ```bash
-git clone https://github.com/adamk/foxchase-zwap-dashboard.git
-cd foxchase-zwap-dashboard
+git clone https://github.com/adamk/foxchase-exz-dashboard.git
+cd foxchase-exz-dashboard
 python3 --version
 cp config.example.js config.js
 ```
@@ -64,7 +64,7 @@ include a short-lived token:
 ```js
 window.ZWAP_CONFIG = {
   connectorUrl: 'http://127.0.0.1:8789/api/session',
-  computeUrl: 'https://your-private-zwap-endpoint/api/v1/live/calculate',
+  computeUrl: 'https://your-private-exz-endpoint/api/v1/live/calculate',
   computeToken: 'YOUR_SHORT_LIVED_LIVE_TOKEN',
   presenceUrl: 'http://127.0.0.1:5070/api/v1/presence'
 };
