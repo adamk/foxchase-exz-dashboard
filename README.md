@@ -3,8 +3,8 @@
 This is the browser-facing portion of the Foxchase ZWAP study. The repository
 intentionally contains no ZWAP calculation engine, thresholds, Alpaca
 credentials, or market-data downloader. The browser sends user-owned,
-historical SPY bars to a private calculation service and renders the returned
-series.
+historical SPY bars to a rate-limited historical relay and renders the returned
+series. The relay forwards the request to the private calculation engine.
 
 ## Requirements
 

@@ -1,4 +1,4 @@
-"""User-side Alpaca adapter for the private EC2 ZWAP API.
+"""User-side Alpaca adapter for the ZWAP calculation API.
 
 This file contains data transport only. It fetches bars with the user's own
 Alpaca credentials, sends normalized bars to EC2, and prints the derived
@@ -6,8 +6,7 @@ response. It does not contain the ZWAP calculation logic.
 
 Example:
   python3 zwap_client.py --date 2026-08-04 --offset 1 \
-    --api-url https://your-private-zwap-endpoint/api/v1/historical/calculate \
-    --token "$ZWAP_HISTORICAL_TOKEN"
+    --api-url https://bot.foxchasetrading.com/api/public/zwap/historical
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import argparse
 import json
 import math
 import os
+import uuid
 from datetime import date as date_type, datetime, time as time_type, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -192,22 +192,29 @@ def _download_payload(day: date_type, offset: int) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Submit user-owned Alpaca bars to private ZWAP compute API")
+    parser = argparse.ArgumentParser(description="Submit user-owned Alpaca bars to the ZWAP compute API")
     parser.add_argument("--date", required=True, help="session date YYYY-MM-DD")
     parser.add_argument("--offset", type=int, default=1, help="strike offset from opening ATM")
-    parser.add_argument("--api-url", default=os.getenv("ZWAP_API_URL", "http://127.0.0.1:5070/api/v1/historical/calculate"))
+    parser.add_argument("--api-url", default=os.getenv(
+        "ZWAP_API_URL",
+        "https://bot.foxchasetrading.com/api/public/zwap/historical",
+    ))
     parser.add_argument("--token", default=os.getenv("ZWAP_HISTORICAL_TOKEN", ""))
     parser.add_argument("--output", type=Path, help="optional local JSON output path")
     args = parser.parse_args()
-    if not args.token:
-        raise SystemExit("set --token or ZWAP_HISTORICAL_TOKEN")
+    public_historical = "/api/public/zwap/historical" in args.api_url
+    if not public_historical and not args.token:
+        raise SystemExit("set --token or ZWAP_HISTORICAL_TOKEN for a private endpoint")
     payload = _download_payload(date_type.fromisoformat(args.date), max(-10, min(10, args.offset)))
     body = json.dumps(payload).encode("utf-8")
-    request = Request(args.api_url, data=body, method="POST", headers={
-        "Authorization": f"Bearer {args.token}",
+    headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-    })
+        "X-ZWAP-Session": os.getenv("ZWAP_SESSION_ID", uuid.uuid4().hex),
+    }
+    if args.token:
+        headers["Authorization"] = f"Bearer {args.token}"
+    request = Request(args.api_url, data=body, method="POST", headers=headers)
     try:
         with urlopen(request, timeout=60) as response:
             result = json.loads(response.read().decode("utf-8"))
