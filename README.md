@@ -84,6 +84,18 @@ activation flow.
 
 ## Run locally
 
+For macOS, after exporting your Alpaca keys, the one-command launcher starts
+both local processes and opens the dashboard automatically:
+
+```bash
+./run_exz_local.sh
+```
+
+Press **Ctrl-C** in that terminal to stop both processes. The launcher binds
+the connector and dashboard to `127.0.0.1`; neither is exposed to the network.
+
+If you prefer to run them separately:
+
 Start the user-side Alpaca connector:
 
 ```bash
