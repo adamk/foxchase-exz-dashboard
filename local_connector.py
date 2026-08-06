@@ -14,7 +14,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from zwap_client import _download_payload
-from datetime import date as date_type
+from datetime import date as date_type, datetime
+from zoneinfo import ZoneInfo
 
 
 _cache_lock = threading.Lock()
@@ -33,6 +34,9 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         try:
             session_date = date_type.fromisoformat(query.get("date", [""])[0])
+            if session_date >= datetime.now(ZoneInfo("America/New_York")).date():
+                self._json({"error": "current-day and future sessions require live access"}, status=402)
+                return
             offset = max(-10, min(10, int(query.get("offset", ["1"])[0])))
             cache_key = (session_date.isoformat(), offset)
             with _cache_lock:
