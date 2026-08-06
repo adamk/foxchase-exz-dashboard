@@ -135,10 +135,11 @@ def _occ_symbol(day: date_type, strike: int) -> str:
     return f"SPY{day:%y%m%d}C{strike * 1000:08d}"
 
 
-def _download_payload(day: date_type, offset: int) -> dict:
-    cached = _cached_payload(day, offset)
-    if cached is not None:
-        return cached
+def _download_payload(day: date_type, offset: int, use_cache: bool = True) -> dict:
+    if use_cache:
+        cached = _cached_payload(day, offset)
+        if cached is not None:
+            return cached
     stock_start, stock_end = _utc_at(day, 4), _utc_at(day, 12)
     stock = _get("/v2/stocks/SPY/bars", {
         "timeframe": "1Min", "start": stock_start, "end": stock_end,

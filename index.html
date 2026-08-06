@@ -26,6 +26,11 @@
     <button id="load">Load session</button>
   </div>
   <div class="note">Historical view is free and uses your own Alpaca data. Current-day and future sessions require paid live access.</div>
+  <div class="toolbar" style="margin-top:10px">
+    <label>Live activation code <input id="activationCode" type="password" autocomplete="off" placeholder="Paid access code"></label>
+    <button id="activate" type="button">Activate live access</button>
+    <span id="liveStatus" class="note" style="margin:0">Not activated</span>
+  </div>
   <div id="status" class="status">Waiting for a session.</div>
   <div class="cards">
     <div class="card"><div class="label">Contract</div><div id="contract" class="value">—</div></div>

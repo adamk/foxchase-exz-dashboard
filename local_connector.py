@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 
 _cache_lock = threading.Lock()
-_payload_cache: dict[tuple[str, int], dict] = {}
+_payload_cache: dict[tuple[str, int, bool], dict] = {}
 _date_pattern = re.compile(r"^data_(\d{4}-\d{2}-\d{2})_meta\.json$")
 
 
@@ -65,17 +65,22 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         try:
             session_date = date_type.fromisoformat(query.get("date", [""])[0])
-            if session_date >= datetime.now(ZoneInfo("America/New_York")).date():
+            today = datetime.now(ZoneInfo("America/New_York")).date()
+            live = query.get("live", ["0"])[0] == "1"
+            if session_date > today or (session_date == today and not live):
                 self._json({"error": "current-day and future sessions require live access"}, status=402)
                 return
             offset = max(-10, min(10, int(query.get("offset", ["1"])[0])))
-            cache_key = (session_date.isoformat(), offset)
-            with _cache_lock:
-                payload = _payload_cache.get(cache_key)
-            if payload is None:
-                payload = _download_payload(session_date, offset)
+            cache_key = (session_date.isoformat(), offset, live)
+            payload = None
+            if not live:
                 with _cache_lock:
-                    _payload_cache[cache_key] = payload
+                    payload = _payload_cache.get(cache_key)
+            if payload is None:
+                payload = _download_payload(session_date, offset, use_cache=not live)
+                if not live:
+                    with _cache_lock:
+                        _payload_cache[cache_key] = payload
             self._json(payload)
         except Exception as exc:  # local diagnostics only; no credentials included
             self._json({"error": str(exc)[:240]}, status=502)

@@ -78,8 +78,11 @@ derived EXZ calculation is performed by Foxchase Trading’s private service.
 
 The public repository intentionally contains no live endpoint, activation
 token, or private-service credentials. After live access is approved, Foxchase
-Trading provides the required activation instructions separately. Do not add
-private live configuration or tokens to this public repository.
+Trading provides an activation code separately. Enter that code in the
+dashboard’s **Live activation code** field; the dashboard exchanges it for a
+short-lived entitlement token and then uses the private Foxchase service for
+same-day calculations. Do not add private live configuration or tokens to this
+public repository.
 
 ## Run locally
 
