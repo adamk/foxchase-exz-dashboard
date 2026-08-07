@@ -43,6 +43,14 @@
       return Number.isFinite(timestamp)?{...point,timestamp:new Date(timestamp).toISOString()}:point;
     });
   }
+  function chartLayout(series,l,r){
+    const step=Math.min(14,(r-l)/Math.max(1,series.length-1));
+    const plotRight=Math.min(r,l+step*Math.max(1,series.length-1));
+    const indexByTimestamp=new Map(series.map((point,index)=>[point.timestamp,index]));
+    const XIndex=index=>l+(plotRight-l)*index/Math.max(1,series.length-1);
+    const XPoint=point=>XIndex(indexByTimestamp.get(point.timestamp)??0);
+    return {plotRight,XIndex,XPoint};
+  }
   function drawGrid(x,l,t,r,b,lo,hi){x.font='10px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(r,y);x.stroke();x.fillStyle='#8b949e';x.textAlign='right';x.fillText(v.toFixed(2),r-4,y+3)}}
   function drawTimeAxis(x,p,l,r,b,t){
     const indices=new Map(),add=(i,label=null)=>{if(i>=0&&!indices.has(i))indices.set(i,label)};
@@ -68,8 +76,8 @@
       const cx=l+(r-l)*i/Math.max(1,p.length-1);x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.textAlign=j===0?'left':j===entries.length-1?'right':'center';x.fillText(label,cx,b+17)
     }
   }
-  function drawPrice(series){const {x,w,h}=setupCanvas('price'),p=chartSeries(series).filter(v=>v.option_close!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,vals=p.flatMap(v=>[v.option_low??v.option_close,v.option_high??v.option_close]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max((hi-lo)*.12,.05);lo-=pad;hi+=pad;const naturalStep=14,step=Math.min(naturalStep,(r-l)/Math.max(1,p.length-1)),plotRight=Math.min(r,l+step*Math.max(1,p.length-1)),X=i=>l+(plotRight-l)*i/Math.max(1,p.length-1),Y=v=>b-(b-t)*(v-lo)/(hi-lo),candleWidth=Math.max(3,Math.min(10,step*.72));drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,p,l,plotRight,b,t);p.forEach((v,i)=>{const o=Number(v.option_open??v.option_close),c=Number(v.option_close),color=c>=o?'#39ff14':'#ff391f',cx=X(i);x.strokeStyle=color;x.beginPath();x.moveTo(cx,Y(Number(v.option_high??c)));x.lineTo(cx,Y(Number(v.option_low??c)));x.stroke();x.fillStyle=color;const top=Y(Math.max(o,c)),bottom=Y(Math.min(o,c));x.fillRect(cx-candleWidth/2,top,candleWidth,Math.max(1,bottom-top))})}
-  function drawZ(series){const {x,w,h}=setupCanvas('z'),p=chartSeries(series).filter(v=>v.ex_z!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,ref=p.slice(0,30).map(v=>Number(v.ex_z)),lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1,X=i=>l+(r-l)*i/Math.max(1,p.length-1),Y=v=>b-(b-t)*(v-lo)/(hi-lo);drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,p,l,r,b,t);x.setLineDash([4,4]);x.strokeStyle='#6e7681';[0].forEach(v=>{x.beginPath();x.moveTo(l,Y(v));x.lineTo(r,Y(v));x.stroke()});x.setLineDash([]);x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();p.forEach((v,i)=>i?x.lineTo(X(i),Y(Number(v.ex_z))):x.moveTo(X(i),Y(Number(v.ex_z))));x.stroke()}
+  function drawPrice(series){const {x,w,h}=setupCanvas('price'),p=series.filter(v=>v.option_close!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,vals=p.flatMap(v=>[v.option_low??v.option_close,v.option_high??v.option_close]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max((hi-lo)*.12,.05);lo-=pad;hi+=pad;const {plotRight,XPoint}=chartLayout(series,l,r),Y=v=>b-(b-t)*(v-lo)/(hi-lo),step=(plotRight-l)/Math.max(1,series.length-1),candleWidth=Math.max(3,Math.min(10,step*.72));drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);p.forEach(v=>{const o=Number(v.option_open??v.option_close),c=Number(v.option_close),color=c>=o?'#39ff14':'#ff391f',cx=XPoint(v);x.strokeStyle=color;x.beginPath();x.moveTo(cx,Y(Number(v.option_high??c)));x.lineTo(cx,Y(Number(v.option_low??c)));x.stroke();x.fillStyle=color;const top=Y(Math.max(o,c)),bottom=Y(Math.min(o,c));x.fillRect(cx-candleWidth/2,top,candleWidth,Math.max(1,bottom-top))})}
+  function drawZ(series){const {x,w,h}=setupCanvas('z'),p=series.filter(v=>v.ex_z!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,ref=p.slice(0,30).map(v=>Number(v.ex_z)),lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1,{plotRight,XPoint}=chartLayout(series,l,r),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo);drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);x.setLineDash([4,4]);x.strokeStyle='#6e7681';[0].forEach(v=>{x.beginPath();x.moveTo(l,Y(v));x.lineTo(plotRight,Y(v));x.stroke()});x.setLineDash([]);x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();p.forEach((v,i)=>i?x.lineTo(X(v),Y(Number(v.ex_z))):x.moveTo(X(v),Y(Number(v.ex_z))));x.stroke()}
   function sessionRegime(s){return (s.regime==='UNKNOWN'&&cachedRegimes[s.date])||s.regime||'UNKNOWN'}
   function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');picker.innerHTML=visible.length?visible.map(s=>`<option value="${s.date}" ${s.date===current?'selected':''}>${s.date} · ${sessionRegime(s)}</option>`).join(''):'<option value="">No cached historical sessions</option>';if(current&&visible.some(s=>s.date===current))picker.value=current}
   async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){sessions=result.sessions;renderSessions()}}catch(_) {}}
@@ -105,7 +113,7 @@
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=result.regime||'—';
       if(result.regime&&result.regime!=='UNKNOWN'){cachedRegimes[date]=result.regime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
-      $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';drawPrice(p);drawZ(p);
+      $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';const visualSeries=chartSeries(p);drawPrice(visualSeries);drawZ(visualSeries);
       status(isLiveDate?`Updated ${result.option_symbol||'session'} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'} · Study ready.`);
       if(isLiveDate)scheduleLiveRefresh();
       refreshSessions();
