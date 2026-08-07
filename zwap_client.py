@@ -80,10 +80,18 @@ def _cached_payload(day: date_type, offset: int) -> dict | None:
                 candidates.append((symbol, rows))
     if not candidates:
         return None
-    symbol, option_rows = min(
-        candidates,
-        key=lambda item: (abs(int(item[0][-8:]) / 1000 - target), -len(item[1])),
-    )
+
+    # A cached session must match the requested strike exactly.  Falling back
+    # to the nearest cached contract here makes the strike buttons appear to
+    # do nothing (for example, 4/17's -$1 request for 705C silently returned
+    # the cached 706C).  If the exact contract is not cached, return None so
+    # _download_payload() goes to Alpaca and requests it.
+    target_symbol = _occ_symbol(day, target)
+    exact = next(((symbol, rows) for symbol, rows in candidates
+                  if symbol == target_symbol), None)
+    if exact is None:
+        return None
+    symbol, option_rows = exact
 
     previous_options = _read_json(root / f"data_{day_text}_{symbol}_previous_option_bars.json")
     if not isinstance(previous_options, dict):
