@@ -53,27 +53,41 @@
   }
   function drawGrid(x,l,t,r,b,lo,hi){x.font='10px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(r,y);x.stroke();x.fillStyle='#8b949e';x.textAlign='right';x.fillText(v.toFixed(2),r-4,y+3)}}
   function drawTimeAxis(x,p,l,r,b,t){
+    // Use quarter-hour labels only. The former mixture of quarter-hour and
+    // evenly-spaced labels could place two different timestamps on top of one
+    // another (most noticeably around 10:00), making the axis look blurred.
     const indices=new Map(),add=(i,label=null)=>{if(i>=0&&!indices.has(i))indices.set(i,label)};
     const times=p.map(v=>Date.parse(v.timestamp));
     const valid=times.filter(Number.isFinite),first=valid[0],last=valid[valid.length-1];
+    if(!p.length)return;
     add(0,etAxisTime(p[0].timestamp));
     if(Number.isFinite(first)&&Number.isFinite(last)){
       const quarter=15*60*1000;
       for(let target=Math.ceil(first/quarter)*quarter;target<=last;target+=quarter){
         let best=-1,bestDistance=Infinity;
         times.forEach((value,i)=>{if(!Number.isFinite(value))return;const distance=Math.abs(value-target);if(distance<bestDistance){best=i;bestDistance=distance}});
+        // A normal one-minute session should have a bar very close to the
+        // requested quarter-hour. Keep a generous tolerance for sparse data.
         if(best>=0&&bestDistance<=8*60*1000)add(best,etAxisTime(new Date(target)));
       }
     }
-    const count=Math.min(6,p.length);
-    for(let j=1;j<count;j++)add(Math.round((p.length-1)*j/Math.max(1,count-1)),null);
     add(p.length-1,etAxisTime(p[p.length-1].timestamp));
     const entries=[...indices.entries()].sort((a,b)=>a[0]-b[0]);
     x.font='10px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#8b949e';x.setLineDash([]);
     const labels=new Set();
+    let lastLabelRight=-Infinity;
+    const minLabelGap=42;
     for(const [j,[i,requestedLabel]] of entries.entries()){
-      const label=requestedLabel||etAxisTime(p[i].timestamp);if(!label||labels.has(label))continue;labels.add(label);
-      const cx=l+(r-l)*i/Math.max(1,p.length-1);x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.textAlign=j===0?'left':j===entries.length-1?'right':'center';x.fillText(label,cx,b+17)
+      const label=requestedLabel||etAxisTime(p[i].timestamp);if(!label||labels.has(label))continue;
+      const cx=l+(r-l)*i/Math.max(1,p.length-1);
+      const isFirst=j===0,isLast=j===entries.length-1;
+      const width=x.measureText(label).width;
+      const left=isFirst?cx:isLast?cx-width:cx-width/2;
+      const right=isFirst?cx+width:isLast?cx:cx+width/2;
+      if(!isFirst&&!isLast&&left<lastLabelRight+minLabelGap)continue;
+      labels.add(label);lastLabelRight=right;
+      x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();
+      x.textAlign=isFirst?'left':isLast?'right':'center';x.fillText(label,cx,b+17)
     }
   }
   function drawPrice(series){const {x,w,h}=setupCanvas('price'),p=series.filter(v=>v.option_close!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,vals=p.flatMap(v=>[v.option_low??v.option_close,v.option_high??v.option_close]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max((hi-lo)*.12,.05);lo-=pad;hi+=pad;const {plotRight,XPoint}=chartLayout(series,l,r),Y=v=>b-(b-t)*(v-lo)/(hi-lo),step=(plotRight-l)/Math.max(1,series.length-1),candleWidth=Math.max(3,Math.min(10,step*.72));drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);p.forEach(v=>{const o=Number(v.option_open??v.option_close),c=Number(v.option_close),color=c>=o?'#39ff14':'#ff391f',cx=XPoint(v);x.strokeStyle=color;x.beginPath();x.moveTo(cx,Y(Number(v.option_high??c)));x.lineTo(cx,Y(Number(v.option_low??c)));x.stroke();x.fillStyle=color;const top=Y(Math.max(o,c)),bottom=Y(Math.min(o,c));x.fillRect(cx-candleWidth/2,top,candleWidth,Math.max(1,bottom-top))})}
