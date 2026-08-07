@@ -86,6 +86,10 @@ the key or code for a short-lived entitlement token and then uses the private
 Foxchase service for same-day calculations. Do not add private live
 configuration or tokens to this public repository.
 
+After the current-day session is loaded, the dashboard refreshes it
+automatically every 30 seconds. Historical sessions remain static and are
+loaded only when selected.
+
 ## Run locally
 
 For macOS, the one-command launcher starts both local processes and opens the
