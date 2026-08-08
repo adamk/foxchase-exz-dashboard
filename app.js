@@ -5,6 +5,7 @@
   const fmt=v=>v==null||Number.isNaN(Number(v))?'—':Number(v).toFixed(2);
   const etDate=()=>{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=k=>parts.find(v=>v.type===k).value;return `${get('year')}-${get('month')}-${get('day')}`};
   const etTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}).format(d)};
+  const etMinutes=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return NaN;const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);const hour=Number(parts.find(v=>v.type==='hour')?.value),minute=Number(parts.find(v=>v.type==='minute')?.value);return Number.isFinite(hour)&&Number.isFinite(minute)?hour*60+minute:NaN};
   const etAxisTime=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '';return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}).format(d)};
   const sessionId=(()=>{const key='foxchase_zwap_session';let v=localStorage.getItem(key);if(!v){v=crypto.randomUUID().replaceAll('-','');localStorage.setItem(key,v)}return v})();
   const activationUrl=cfg.activationUrl||'https://exz-api.foxchasetrading.com/api/public/exz/activate';
@@ -91,7 +92,20 @@
     }
   }
   function drawPrice(series){const {x,w,h}=setupCanvas('price'),p=series.filter(v=>v.option_close!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,vals=p.flatMap(v=>[v.option_low??v.option_close,v.option_high??v.option_close]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max((hi-lo)*.12,.05);lo-=pad;hi+=pad;const {plotRight,XPoint}=chartLayout(series,l,r),Y=v=>b-(b-t)*(v-lo)/(hi-lo),step=(plotRight-l)/Math.max(1,series.length-1),candleWidth=Math.max(3,Math.min(10,step*.72));drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);p.forEach(v=>{const o=Number(v.option_open??v.option_close),c=Number(v.option_close),color=c>=o?'#39ff14':'#ff391f',cx=XPoint(v);x.strokeStyle=color;x.beginPath();x.moveTo(cx,Y(Number(v.option_high??c)));x.lineTo(cx,Y(Number(v.option_low??c)));x.stroke();x.fillStyle=color;const top=Y(Math.max(o,c)),bottom=Y(Math.min(o,c));x.fillRect(cx-candleWidth/2,top,candleWidth,Math.max(1,bottom-top))})}
-  function drawZ(series){const {x,w,h}=setupCanvas('z'),p=series.filter(v=>v.ex_z!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,ref=p.slice(0,30).map(v=>Number(v.ex_z)),lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1,{plotRight,XPoint}=chartLayout(series,l,r),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo);drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);x.setLineDash([4,4]);x.strokeStyle='#6e7681';[0].forEach(v=>{x.beginPath();x.moveTo(l,Y(v));x.lineTo(plotRight,Y(v));x.stroke()});x.setLineDash([]);x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();p.forEach((v,i)=>i?x.lineTo(X(v),Y(Number(v.ex_z))):x.moveTo(X(v),Y(Number(v.ex_z))));x.stroke()}
+  function drawZ(series){
+    const {x,w,h}=setupCanvas('z'),p=series.filter(v=>v.ex_z!=null);if(!p.length)return;
+    // Size the axis from the complete morning (09:30–12:00 ET), not merely
+    // the first 30 returned points. This captures morning highs/lows even when
+    // the feed is sparse or starts after the opening bar, while later-session
+    // spikes remain clamped and reported as overflow.
+    const morning=p.filter(v=>{const m=etMinutes(v.timestamp);return m>=570&&m<720}),reference=morning.length>=3?morning:p.slice(0,30),ref=reference.map(v=>Number(v.ex_z)),
+      l=10,r=w-10,t=10,b=h-48,lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1;
+    const {plotRight,XPoint}=chartLayout(series,l,r),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo),plotY=v=>Math.max(t,Math.min(b,Y(v)));
+    drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);
+    x.setLineDash([4,4]);x.strokeStyle='#6e7681';[0].forEach(v=>{x.beginPath();x.moveTo(l,plotY(v));x.lineTo(plotRight,plotY(v));x.stroke()});x.setLineDash([]);
+    x.save();x.beginPath();x.rect(l,t,plotRight-l,b-t);x.clip();x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();
+    p.forEach((v,i)=>i?x.lineTo(X(v),plotY(Number(v.ex_z))):x.moveTo(X(v),plotY(Number(v.ex_z))));x.stroke();x.restore();
+  }
   function sessionRegime(s){return (s.regime==='UNKNOWN'&&cachedRegimes[s.date])||s.regime||'UNKNOWN'}
   function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');picker.innerHTML=visible.length?visible.map(s=>`<option value="${s.date}" ${s.date===current?'selected':''}>${s.date} · ${sessionRegime(s)}</option>`).join(''):'<option value="">No cached historical sessions</option>';if(current&&visible.some(s=>s.date===current))picker.value=current}
   async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){sessions=result.sessions;renderSessions()}}catch(_) {}}
