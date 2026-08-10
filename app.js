@@ -133,7 +133,7 @@
     const isLiveDate=date===etDate();
     if(date>etDate()){stopLiveRefresh();status('Live access is limited to the current trading day.');return}
     const token=isLiveDate?liveToken():'';
-    if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active Foxchase EXZ Live entitlement.');return}
+    if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active EXZ Live entitlement from Foxchase Trading.');return}
     if(!isLiveDate)stopLiveRefresh();
     const computeUrl=isLiveDate?liveComputeUrl:cfg.computeUrl;
     if(!cfg.connectorUrl||!computeUrl){status('Local test config is incomplete. Copy config.example.js to config.js.');return}
