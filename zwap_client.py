@@ -148,7 +148,10 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True) -> di
         cached = _cached_payload(day, offset)
         if cached is not None:
             return cached
-    stock_start, stock_end = _utc_at(day, 4), _utc_at(day, 12)
+    # Request the complete market day. The previous noon endpoint caused the
+    # live dashboard to appear frozen at 12:00 ET even though auto-refresh and
+    # both local processes were still healthy.
+    stock_start, stock_end = _utc_at(day, 4), _utc_at(day, 16)
     stock = _get("/v2/stocks/SPY/bars", {
         "timeframe": "1Min", "start": stock_start, "end": stock_end,
         "limit": 10000, "feed": "sip", "adjustment": "raw",

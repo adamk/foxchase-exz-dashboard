@@ -22,6 +22,7 @@
   let loadInFlight=false;
   let renderedSeries=null;
   let crosshairIndex=null;
+  const zScaleKey='foxchase_exz_z_scale';
   const sessionsUrl=cfg.sessionsUrl||(cfg.connectorUrl||'').replace(/\/api\/session$/,'/api/sessions');
   function liveToken(){const token=localStorage.getItem(liveTokenKey),expires=Number(localStorage.getItem(liveExpiryKey)||0);if(!token||!expires||Date.now()>=expires){localStorage.removeItem(liveTokenKey);localStorage.removeItem(liveExpiryKey);return ''}return token}
   function stopLiveRefresh(){if(liveRefreshTimer!==null){clearInterval(liveRefreshTimer);liveRefreshTimer=null}}
@@ -87,7 +88,10 @@
       const width=x.measureText(label).width;
       const left=isFirst?cx:isLast?cx-width:cx-width/2;
       const right=isFirst?cx+width:isLast?cx:cx+width/2;
-      if(!isFirst&&!isLast&&left<lastLabelRight+minLabelGap)continue;
+      // Do not force the final, non-quarter-hour timestamp into the space
+      // occupied by the preceding label. That made the right edge look like
+      // blurred text as live bars advanced toward the next quarter hour.
+      if(!isFirst&&left<lastLabelRight+minLabelGap)continue;
       labels.add(label);lastLabelRight=right;
       x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();
       x.textAlign=isFirst?'left':isLast?'right':'center';x.fillText(label,cx,b+17)
@@ -100,7 +104,7 @@
     // the first 30 returned points. This captures morning highs/lows even when
     // the feed is sparse or starts after the opening bar, while later-session
     // spikes remain clamped and reported as overflow.
-    const morning=p.filter(v=>{const m=etMinutes(v.timestamp);return m>=570&&m<720}),reference=morning.length>=3?morning:p.slice(0,30),ref=reference.map(v=>Number(v.ex_z)),
+    const scaleMode=$('zScale')?.value==='session'?'session':'morning',morning=p.filter(v=>{const m=etMinutes(v.timestamp);return m>=570&&m<720}),reference=scaleMode==='session'?p:(morning.length>=3?morning:p.slice(0,30)),ref=reference.map(v=>Number(v.ex_z)),
       l=10,r=w-10,t=10,b=h-48,lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1;
     const {plotRight,XPoint}=chartLayout(series,l,r),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo),plotY=v=>Math.max(t,Math.min(b,Y(v)));
     drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);
@@ -165,6 +169,10 @@
   $('date').max=etDate();
   ['price','z'].forEach(id=>{const canvas=$(id);canvas.addEventListener('pointermove',updateCrosshair);canvas.addEventListener('pointerleave',()=>{crosshairIndex=null;redrawWithCrosshair()})});
   $('regimeFilter').addEventListener('change',renderSessions);
+  if($('zScale')){
+    const savedScale=localStorage.getItem(zScaleKey);if(savedScale==='session'||savedScale==='morning')$('zScale').value=savedScale;
+    $('zScale').addEventListener('change',()=>{localStorage.setItem(zScaleKey,$('zScale').value);$('zScaleNote').textContent=$('zScale').value==='session'?'Full session auto includes all available z-score highs and lows.':'Morning anchored keeps the scale stable after noon; switch to Full session auto to study afternoon extremes.';redrawWithCrosshair()});
+  }
   $('sessionPicker').addEventListener('change',()=>{if($('sessionPicker').value){$('date').value=$('sessionPicker').value;load()}});
   $('load').addEventListener('click',load);
   $('activate').addEventListener('click',activate);

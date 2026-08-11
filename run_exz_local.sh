@@ -47,12 +47,29 @@ if [[ ! -f config.js ]]; then
   exit 1
 fi
 
-if curl -fsS "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1; then
+if curl -fsS "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 \
+   && curl -fsS "http://127.0.0.1:${CONNECTOR_PORT}/healthz" >/dev/null 2>&1; then
   print "Foxchase EXZ is already running at http://127.0.0.1:${WEB_PORT}/"
   if (( $+commands[open] )); then
     open "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 || true
   fi
   exit 0
+fi
+
+# A static web server can remain alive after the connector has exited, making
+# the dashboard appear healthy while its data is frozen. Remove only our known
+# local http.server process so a complete pair can be started below.
+if curl -fsS "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 \
+   && ! curl -fsS "http://127.0.0.1:${CONNECTOR_PORT}/healthz" >/dev/null 2>&1; then
+  STALE_WEB_PID="$(lsof -nP -iTCP:"$WEB_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1)"
+  if [[ -n "$STALE_WEB_PID" ]] && ps -p "$STALE_WEB_PID" -o command= 2>/dev/null | grep -q "http.server ${WEB_PORT}"; then
+    print "Removing stale EXZ web server (the data connector is offline)."
+    kill "$STALE_WEB_PID"
+    for _ in {1..20}; do
+      ! kill -0 "$STALE_WEB_PID" 2>/dev/null && break
+      sleep 0.1
+    done
+  fi
 fi
 if lsof -nP -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   print "Port ${WEB_PORT} is already occupied; leaving the existing dashboard process untouched."
@@ -107,4 +124,16 @@ if (( $+commands[open] )); then
   open "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 || true
 fi
 
-wait "$WEB_PID"
+# Supervise both halves. If either process exits, cleanup stops the survivor
+# instead of leaving an apparently live but frozen dashboard behind.
+while true; do
+  if ! kill -0 "$WEB_PID" 2>/dev/null; then
+    print -u2 "The EXZ web server stopped. See $WEB_LOG"
+    exit 1
+  fi
+  if [[ -n "${CONNECTOR_PID:-}" ]] && ! kill -0 "$CONNECTOR_PID" 2>/dev/null; then
+    print -u2 "The EXZ connector stopped. See $CONNECTOR_LOG"
+    exit 1
+  fi
+  sleep 5
+done
