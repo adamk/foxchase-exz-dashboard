@@ -1,7 +1,7 @@
 """User-side Alpaca adapter for the ZWAP calculation API.
 
 This file contains data transport only. It fetches bars with the user's own
-Alpaca credentials, sends normalized bars to EC2, and prints the derived
+Alpaca credentials, sends normalized bars to the private compute service, and prints the derived
 response. It does not contain the ZWAP calculation logic.
 
 Example:
