@@ -14,6 +14,53 @@ WEB_LOG="${TMPDIR:-/tmp}/foxchase-exz-web.log"
 
 cd "$SCRIPT_DIR"
 
+stop_listener() {
+  local port="$1"
+  local label="$2"
+  local pid process_cwd
+
+  pid="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -n 1)"
+  if [[ -z "$pid" ]]; then
+    return 0
+  fi
+
+  process_cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+  if [[ "$process_cwd" != "$SCRIPT_DIR" ]]; then
+    print -u2 "Port ${port} is occupied outside the EXZ directory; not stopping PID ${pid}: ${process_cwd:-unknown directory}"
+    return 1
+  fi
+
+  print "Stopping ${label} (PID ${pid})…"
+  if ! kill "$pid"; then
+    print -u2 "Unable to signal ${label} (PID ${pid})."
+    return 1
+  fi
+  for _ in {1..30}; do
+    ! kill -0 "$pid" 2>/dev/null && return 0
+    sleep 0.1
+  done
+  print -u2 "${label} did not stop cleanly (PID ${pid})."
+  return 1
+}
+
+if [[ "${1:-}" == "stop" ]]; then
+  failed=0
+  stop_listener "$WEB_PORT" "EXZ web server" || failed=1
+  stop_listener "$CONNECTOR_PORT" "EXZ Alpaca connector" || failed=1
+
+  if (( failed )); then
+    print -u2 "Foxchase EXZ could not be stopped completely."
+    exit 1
+  fi
+  print "Foxchase EXZ is stopped."
+  exit 0
+fi
+
+if (( $# > 0 )); then
+  print -u2 "Usage: ./run_exz_local.sh [stop]"
+  exit 2
+fi
+
 # Reuse the existing local Alpaca environment without sourcing unrelated
 # application settings. Only known Alpaca variable names are imported.
 ENV_FILE="${ZWAP_ENV_FILE:-}"

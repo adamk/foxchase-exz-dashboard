@@ -114,10 +114,17 @@
   }
   function drawCrosshair(series,index){
     if(!series||!Number.isInteger(index)||index<0||index>=series.length)return;
+    const timeLabel=etAxisTime(series[index].timestamp);
     [['price',38],['z',48]].forEach(([id,bottomPad])=>{
       const canvas=$(id),w=canvas.clientWidth,h=canvas.clientHeight,dpr=devicePixelRatio||1,ctx=canvas.getContext('2d');
-      ctx.setTransform(dpr,0,0,dpr,0,0);const l=10,r=w-10,{plotRight}=chartLayout(series,l,r),cx=l+(plotRight-l)*index/Math.max(1,series.length-1);
+      ctx.setTransform(dpr,0,0,dpr,0,0);const l=10,r=w-10,{plotRight}=chartLayout(series,l,r),cx=l+(plotRight-l)*index/Math.max(1,series.length-1),plotBottom=h-bottomPad;
       ctx.save();ctx.beginPath();ctx.rect(l,10,plotRight-l,h-bottomPad-10);ctx.clip();ctx.strokeStyle='#c9d1d9';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(cx,10);ctx.lineTo(cx,h-bottomPad);ctx.stroke();ctx.restore();
+      if(timeLabel){
+        ctx.save();ctx.setLineDash([]);ctx.font='600 11px sans-serif';const padX=6,labelWidth=ctx.measureText(timeLabel).width+padX*2,labelHeight=20;
+        const labelX=Math.max(l,Math.min(plotRight-labelWidth,cx-labelWidth/2)),labelY=plotBottom+3;
+        ctx.fillStyle='#c9d1d9';ctx.fillRect(labelX,labelY,labelWidth,labelHeight);
+        ctx.fillStyle='#0d1117';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(timeLabel,labelX+labelWidth/2,labelY+labelHeight/2);ctx.restore();
+      }
     });
   }
   function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawCrosshair(renderedSeries,crosshairIndex)}
