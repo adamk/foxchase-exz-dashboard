@@ -10,6 +10,7 @@
   const sessionId=(()=>{const key='foxchase_zwap_session';let v=localStorage.getItem(key);if(!v){v=crypto.randomUUID().replaceAll('-','');localStorage.setItem(key,v)}return v})();
   const activationUrl=cfg.activationUrl||'https://exz-api.foxchasetrading.com/api/public/exz/activate';
   const liveComputeUrl=cfg.liveComputeUrl||'https://exz-api.foxchasetrading.com/api/public/exz/live';
+  const rvolUrl=cfg.rvolUrl||'https://exz-api.foxchasetrading.com/api/public/exz/rvol';
   const liveRefreshMs=Math.max(15000,Number(cfg.liveRefreshMs||30000));
   const liveTokenKey='foxchase_exz_live_token';
   const liveExpiryKey='foxchase_exz_live_expires';
@@ -21,6 +22,7 @@
   let liveRefreshTimer=null;
   let loadInFlight=false;
   let renderedSeries=null;
+  let renderedRvol=null;
   let crosshairIndex=null;
   const zScaleKey='foxchase_exz_z_scale';
   const sessionsUrl=cfg.sessionsUrl||(cfg.connectorUrl||'').replace(/\/api\/session$/,'/api/sessions');
@@ -112,10 +114,30 @@
     x.save();x.beginPath();x.rect(l,t,plotRight-l,b-t);x.clip();x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();
     p.forEach((v,i)=>i?x.lineTo(X(v),plotY(Number(v.ex_z))):x.moveTo(X(v),plotY(Number(v.ex_z))));x.stroke();x.restore();
   }
+  function drawRvol(series,rvolSeries){
+    const {x,w,h}=setupCanvas('rvol'),p=(rvolSeries||[]).filter(v=>v.rvol!=null&&Number.isFinite(Date.parse(v.timestamp))).sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));if(!p.length)return;
+    const l=10,r=w-10,t=10,b=h-38,values=p.map(v=>Number(v.rvol)),hi=Math.max(2.4,...values)*1.08,lo=0;
+    const colors={purple:'#a371f7',red:'#ff391f',orange:'#ffa200',green:'#39bd44',blue:'#00c1e3',grey:'#8b949e'};
+    // rVol belongs to SPY, not to the selected option. Give each Eastern-time
+    // five-minute bucket its own fixed RTH slot so sparse option bars cannot
+    // collapse or stretch the volume bars.
+    const lastMinute=Math.max(570,...p.map(v=>etMinutes(v.timestamp)).filter(Number.isFinite)),visibleMinutes=Math.max(5,lastMinute-570+5),slotWidth=(r-l)*5/visibleMinutes,Y=v=>b-(b-t)*(v-lo)/(hi-lo),X=v=>l+(r-l)*Math.max(0,Math.min(visibleMinutes,etMinutes(v.timestamp)-570))/visibleMinutes;
+    drawGrid(x,l,t,r,b,lo,hi);
+    // The shared time-axis helper spaces labels by array index. rVol instead
+    // occupies absolute five-minute RTH slots, so its labels must use the same
+    // clock coordinate or they appear irregularly spaced.
+    x.font='10px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#8b949e';x.textAlign='center';
+    for(let minute=570;minute<=lastMinute;minute+=30){
+      const cx=l+(r-l)*(minute-570)/visibleMinutes,hour=Math.floor(minute/60),mins=minute%60,displayHour=((hour+11)%12)+1,label=`${displayHour}:${String(mins).padStart(2,'0')} ${hour>=12?'PM':'AM'}`;
+      x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.fillText(label,cx,b+17)
+    }
+    x.setLineDash([4,4]);x.strokeStyle='#8b949e';x.beginPath();x.moveTo(l,Y(1));x.lineTo(r,Y(1));x.stroke();x.setLineDash([]);
+    p.forEach(v=>{const value=Number(v.rvol),left=X(v),width=Math.max(1,slotWidth*.9);x.fillStyle=colors[v.color]||colors.grey;x.fillRect(left,Y(value),width,Math.max(1,b-Y(value)))})
+  }
   function drawCrosshair(series,index){
     if(!series||!Number.isInteger(index)||index<0||index>=series.length)return;
     const timeLabel=etAxisTime(series[index].timestamp);
-    [['price',38],['z',48]].forEach(([id,bottomPad])=>{
+    [['price',38],['z',48],['rvol',38]].forEach(([id,bottomPad])=>{
       const canvas=$(id),w=canvas.clientWidth,h=canvas.clientHeight,dpr=devicePixelRatio||1,ctx=canvas.getContext('2d');
       ctx.setTransform(dpr,0,0,dpr,0,0);const l=10,r=w-10,{plotRight}=chartLayout(series,l,r),cx=l+(plotRight-l)*index/Math.max(1,series.length-1),plotBottom=h-bottomPad;
       ctx.save();ctx.beginPath();ctx.rect(l,10,plotRight-l,h-bottomPad-10);ctx.clip();ctx.strokeStyle='#c9d1d9';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(cx,10);ctx.lineTo(cx,h-bottomPad);ctx.stroke();ctx.restore();
@@ -127,7 +149,7 @@
       }
     });
   }
-  function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawCrosshair(renderedSeries,crosshairIndex)}
+  function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawRvol(renderedSeries,renderedRvol);drawCrosshair(renderedSeries,crosshairIndex)}
   function updateCrosshair(event){
     if(!renderedSeries)return;const canvas=event.currentTarget,rect=canvas.getBoundingClientRect(),x=Math.max(10,Math.min(canvas.clientWidth-10,event.clientX-rect.left)),l=10,r=canvas.clientWidth-10,{plotRight}=chartLayout(renderedSeries,l,r);
     crosshairIndex=Math.max(0,Math.min(renderedSeries.length-1,Math.round((x-l)/Math.max(1,plotRight-l)*(renderedSeries.length-1))));redrawWithCrosshair();
@@ -142,6 +164,8 @@
     const date=$('date').value,offset=Number($('offset').value||1);
     if(!date){status('Choose a date first.');return}
     const isLiveDate=date===etDate();
+    $('rvolSection').hidden=true;
+    if(!isLiveDate)renderedRvol=[];
     if(date>etDate()){stopLiveRefresh();status('Live access is limited to the current trading day.');return}
     const token=isLiveDate?liveToken():'';
     if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active EXZ Live entitlement from Foxchase Trading.');return}
@@ -167,20 +191,26 @@
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=result.regime||'—';
       if(result.regime&&result.regime!=='UNKNOWN'){cachedRegimes[date]=result.regime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
-      $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';const visualSeries=chartSeries(p);renderedSeries=visualSeries;crosshairIndex=null;drawPrice(visualSeries);drawZ(visualSeries);
+      let rvolSeries=[];
+      if(isLiveDate&&rvolUrl){
+        try{const rvolResponse=await fetch(`${rvolUrl}?date=${encodeURIComponent(date)}`,{headers:{Authorization:`Bearer ${token}`}}),rvolResult=await rvolResponse.json();if(rvolResponse.ok&&Array.isArray(rvolResult.series))rvolSeries=rvolResult.series}catch(_){}
+      }
+      $('rvolSection').hidden=!(isLiveDate&&rvolSeries.length);
+      $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';const visualSeries=chartSeries(p);renderedSeries=visualSeries;renderedRvol=rvolSeries;crosshairIndex=null;drawPrice(visualSeries);drawZ(visualSeries);if(isLiveDate)drawRvol(visualSeries,renderedRvol);
       status(isLiveDate?`Updated ${result.option_symbol||'session'} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'} · Study ready.`);
       if(isLiveDate)scheduleLiveRefresh();
       refreshSessions();
     }catch(e){status(`Error: ${e.message}`)}finally{$('load').disabled=false;loadInFlight=false}
   }
   $('date').max=etDate();
-  ['price','z'].forEach(id=>{const canvas=$(id);canvas.addEventListener('pointermove',updateCrosshair);canvas.addEventListener('pointerleave',()=>{crosshairIndex=null;redrawWithCrosshair()})});
+  $('date').addEventListener('change',()=>{$('offset').value=0});
+  ['price','z','rvol'].forEach(id=>{const canvas=$(id);canvas.addEventListener('pointermove',updateCrosshair);canvas.addEventListener('pointerleave',()=>{crosshairIndex=null;redrawWithCrosshair()})});
   $('regimeFilter').addEventListener('change',renderSessions);
   if($('zScale')){
     const savedScale=localStorage.getItem(zScaleKey);if(savedScale==='session'||savedScale==='morning')$('zScale').value=savedScale;
     $('zScale').addEventListener('change',()=>{localStorage.setItem(zScaleKey,$('zScale').value);$('zScaleNote').textContent=$('zScale').value==='session'?'Full session auto includes all available z-score highs and lows.':'Morning anchored keeps the scale stable after noon; switch to Full session auto to study afternoon extremes.';redrawWithCrosshair()});
   }
-  $('sessionPicker').addEventListener('change',()=>{if($('sessionPicker').value){$('date').value=$('sessionPicker').value;load()}});
+  $('sessionPicker').addEventListener('change',()=>{if($('sessionPicker').value){$('date').value=$('sessionPicker').value;$('offset').value=0;load()}});
   $('load').addEventListener('click',load);
   $('activate').addEventListener('click',activate);
   document.querySelectorAll('.strike-button').forEach(button=>button.addEventListener('click',()=>{

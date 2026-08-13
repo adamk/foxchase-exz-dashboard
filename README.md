@@ -90,6 +90,13 @@ After the current-day session is loaded, the dashboard refreshes it
 automatically every 30 seconds. Historical sessions remain static and are
 loaded only when selected.
 
+The SPY five-minute rVol panel is part of EXZ Live and is intentionally hidden
+from the free historical dashboard. Its completed-bar values come from the
+private Foxchase Trading TradingView webhook feed rather than from the user's
+Alpaca option or stock data, so changing the selected option contract cannot
+change the rVol series. The webhook credential and ingestion configuration are
+server-side and are not included in this public repository.
+
 ## Run locally
 
 For macOS, the one-command launcher starts both local processes and opens the
