@@ -10,7 +10,6 @@
   const sessionId=(()=>{const key='foxchase_zwap_session';let v=localStorage.getItem(key);if(!v){v=crypto.randomUUID().replaceAll('-','');localStorage.setItem(key,v)}return v})();
   const activationUrl=cfg.activationUrl||'https://exz-api.foxchasetrading.com/api/public/exz/activate';
   const liveComputeUrl=cfg.liveComputeUrl||'https://exz-api.foxchasetrading.com/api/public/exz/live';
-  const rvolUrl=cfg.rvolUrl||'https://exz-api.foxchasetrading.com/api/public/exz/rvol';
   const liveRefreshMs=Math.max(15000,Number(cfg.liveRefreshMs||30000));
   const liveTokenKey='foxchase_exz_live_token';
   const liveExpiryKey='foxchase_exz_live_expires';
@@ -118,20 +117,20 @@
     const {x,w,h}=setupCanvas('rvol'),p=(rvolSeries||[]).filter(v=>v.rvol!=null&&Number.isFinite(Date.parse(v.timestamp))).sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));if(!p.length)return;
     const l=10,r=w-10,t=10,b=h-38,values=p.map(v=>Number(v.rvol)),hi=Math.max(2.4,...values)*1.08,lo=0;
     const colors={purple:'#a371f7',red:'#ff391f',orange:'#ffa200',green:'#39bd44',blue:'#00c1e3',grey:'#8b949e'};
-    // rVol belongs to SPY, not to the selected option. Give each Eastern-time
-    // five-minute bucket its own fixed RTH slot so sparse option bars cannot
-    // collapse or stretch the volume bars.
-    const lastMinute=Math.max(570,...p.map(v=>etMinutes(v.timestamp)).filter(Number.isFinite)),visibleMinutes=Math.max(5,lastMinute-570+5),slotWidth=(r-l)*5/visibleMinutes,Y=v=>b-(b-t)*(v-lo)/(hi-lo),X=v=>l+(r-l)*Math.max(0,Math.min(visibleMinutes,etMinutes(v.timestamp)-570))/visibleMinutes;
+    // Use the exact elapsed-session width of the one-minute price/EXZ series.
+    // A five-minute rVol bar therefore spans five one-minute chart slots and
+    // does not stretch across the unused morning canvas.
+    const {plotRight}=chartLayout(series,l,r),lastPriceMinute=Math.max(571,...series.map(v=>etMinutes(v.timestamp)).filter(Number.isFinite)),elapsedMinutes=Math.max(1,lastPriceMinute-570),slotWidth=(plotRight-l)*5/elapsedMinutes,Y=v=>b-(b-t)*(v-lo)/(hi-lo),X=v=>l+(plotRight-l)*Math.max(0,Math.min(elapsedMinutes,etMinutes(v.timestamp)-570))/elapsedMinutes;
     drawGrid(x,l,t,r,b,lo,hi);
     // The shared time-axis helper spaces labels by array index. rVol instead
     // occupies absolute five-minute RTH slots, so its labels must use the same
     // clock coordinate or they appear irregularly spaced.
     x.font='10px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#8b949e';x.textAlign='center';
-    for(let minute=570;minute<=lastMinute;minute+=30){
-      const cx=l+(r-l)*(minute-570)/visibleMinutes,hour=Math.floor(minute/60),mins=minute%60,displayHour=((hour+11)%12)+1,label=`${displayHour}:${String(mins).padStart(2,'0')} ${hour>=12?'PM':'AM'}`;
+    for(let minute=570;minute<=lastPriceMinute;minute+=30){
+      const cx=l+(plotRight-l)*(minute-570)/elapsedMinutes,hour=Math.floor(minute/60),mins=minute%60,displayHour=((hour+11)%12)+1,label=`${displayHour}:${String(mins).padStart(2,'0')} ${hour>=12?'PM':'AM'}`;
       x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.fillText(label,cx,b+17)
     }
-    x.setLineDash([4,4]);x.strokeStyle='#8b949e';x.beginPath();x.moveTo(l,Y(1));x.lineTo(r,Y(1));x.stroke();x.setLineDash([]);
+    x.setLineDash([4,4]);x.strokeStyle='#8b949e';x.beginPath();x.moveTo(l,Y(1));x.lineTo(plotRight,Y(1));x.stroke();x.setLineDash([]);
     p.forEach(v=>{const value=Number(v.rvol),left=X(v),width=Math.max(1,slotWidth*.9);x.fillStyle=colors[v.color]||colors.grey;x.fillRect(left,Y(value),width,Math.max(1,b-Y(value)))})
   }
   function drawCrosshair(series,index){
@@ -182,7 +181,8 @@
       status('Computing the study…');
       const headers={'Content-Type':'application/json','X-ZWAP-Session':sessionId};
       if(isLiveDate)headers.Authorization=`Bearer ${token}`;else if(cfg.computeToken)headers.Authorization=`Bearer ${cfg.computeToken}`;
-      const response=await fetch(computeUrl,{method:'POST',headers,body:JSON.stringify(payload)});
+      const {rvol_series:rvolSeries=[],...computePayload}=payload;
+      const response=await fetch(computeUrl,{method:'POST',headers,body:JSON.stringify(computePayload)});
       const result=await response.json();
       if(!response.ok){
         if(isLiveDate&&response.status===401){localStorage.removeItem(liveTokenKey);localStorage.removeItem(liveExpiryKey);updateLiveStatus();stopLiveRefresh()}
@@ -191,10 +191,6 @@
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=result.regime||'—';
       if(result.regime&&result.regime!=='UNKNOWN'){cachedRegimes[date]=result.regime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
-      let rvolSeries=[];
-      if(isLiveDate&&rvolUrl){
-        try{const rvolResponse=await fetch(`${rvolUrl}?date=${encodeURIComponent(date)}`,{headers:{Authorization:`Bearer ${token}`}}),rvolResult=await rvolResponse.json();if(rvolResponse.ok&&Array.isArray(rvolResult.series))rvolSeries=rvolResult.series}catch(_){}
-      }
       $('rvolSection').hidden=!(isLiveDate&&rvolSeries.length);
       $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';const visualSeries=chartSeries(p);renderedSeries=visualSeries;renderedRvol=rvolSeries;crosshairIndex=null;drawPrice(visualSeries);drawZ(visualSeries);if(isLiveDate)drawRvol(visualSeries,renderedRvol);
       status(isLiveDate?`Updated ${result.option_symbol||'session'} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'} · Study ready.`);

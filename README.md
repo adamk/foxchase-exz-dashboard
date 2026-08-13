@@ -91,11 +91,11 @@ automatically every 30 seconds. Historical sessions remain static and are
 loaded only when selected.
 
 The SPY five-minute rVol panel is part of EXZ Live and is intentionally hidden
-from the free historical dashboard. Its completed-bar values come from the
-private Foxchase Trading TradingView webhook feed rather than from the user's
-Alpaca option or stock data, so changing the selected option contract cannot
-change the rVol series. The webhook credential and ingestion configuration are
-server-side and are not included in this public repository.
+from the free historical dashboard. It is calculated locally from the user's
+own Alpaca SIP SPY bars and compares each completed five-minute interval with
+the same interval across the prior 10 regular sessions. Changing the selected
+option contract cannot change the rVol series, and raw rVol inputs are not
+submitted to Foxchase Trading's calculation service.
 
 ## Run locally
 

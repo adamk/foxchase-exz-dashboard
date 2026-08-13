@@ -16,12 +16,25 @@ import json
 import math
 import os
 import uuid
+from functools import lru_cache
 from datetime import date as date_type, datetime, time as time_type, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+
+
+RVOL_LOOKBACK_SESSIONS = 10
+RVOL_INTERVAL_MINUTES = 5
+RVOL_COLORS = (
+    (2.2, "purple"),
+    (1.8, "red"),
+    (1.2, "orange"),
+    (0.8, "green"),
+    (0.4, "blue"),
+    (-math.inf, "grey"),
+)
 
 
 def _cache_root() -> Path:
@@ -143,7 +156,96 @@ def _occ_symbol(day: date_type, strike: int) -> str:
     return f"SPY{day:%y%m%d}C{strike * 1000:08d}"
 
 
-def _download_payload(day: date_type, offset: int, use_cache: bool = True) -> dict:
+def _rvol_color(value: float) -> str:
+    return next(color for threshold, color in RVOL_COLORS if value >= threshold)
+
+
+def _eastern_bar(row: dict) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(row["t"]).replace("Z", "+00:00")).astimezone(
+            ZoneInfo("America/New_York")
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+@lru_cache(maxsize=32)
+def _rvol_baseline(day: date_type) -> dict[tuple[int, int], tuple[float, int]]:
+    """Average each RTH five-minute SPY slot across ten prior sessions."""
+    rows = _get("/v2/stocks/SPY/bars", {
+        "timeframe": "1Min",
+        "start": _utc_at(day - timedelta(days=24), 9, 30),
+        "end": _utc_at(day, 9, 29),
+        "limit": 10000,
+        "feed": "sip",
+        "adjustment": "raw",
+        # Alpaca includes extended-hours rows toward the 10,000-row limit.
+        # Newest-first guarantees that the selected sessions are recent.
+        "sort": "desc",
+    }).get("bars", [])
+    parsed: list[tuple[datetime, float]] = []
+    for row in rows:
+        stamp = _eastern_bar(row)
+        if stamp is None or stamp.date() >= day or not time_type(9, 30) <= stamp.time() < time_type(16):
+            continue
+        try:
+            parsed.append((stamp, float(row.get("v", 0))))
+        except (TypeError, ValueError):
+            continue
+    sessions = sorted({stamp.date() for stamp, _ in parsed})[-RVOL_LOOKBACK_SESSIONS:]
+    allowed = set(sessions)
+    minute_rows: dict[tuple[date_type, int, int], list[float]] = {}
+    for stamp, volume in parsed:
+        if stamp.date() in allowed:
+            minute_rows.setdefault(
+                (stamp.date(), stamp.hour, stamp.minute // RVOL_INTERVAL_MINUTES * RVOL_INTERVAL_MINUTES), []
+            ).append(volume)
+    slots: dict[tuple[int, int], list[float]] = {}
+    for (_session, hour, minute), volumes in minute_rows.items():
+        if len(volumes) == RVOL_INTERVAL_MINUTES:
+            slots.setdefault((hour, minute), []).append(sum(volumes))
+    return {
+        slot: (sum(samples) / len(samples), len(samples))
+        for slot, samples in slots.items() if samples
+    }
+
+
+def _rvol_series(day: date_type, current_stock: list[dict]) -> list[dict]:
+    """Return completed five-minute SPY rVol bars using user-owned Alpaca data."""
+    baseline = _rvol_baseline(day)
+    buckets: dict[tuple[int, int], list[tuple[datetime, float]]] = {}
+    for row in current_stock:
+        stamp = _eastern_bar(row)
+        if stamp is None or stamp.date() != day or not time_type(9, 30) <= stamp.time() < time_type(16):
+            continue
+        try:
+            volume = float(row.get("v", 0))
+        except (TypeError, ValueError):
+            continue
+        buckets.setdefault(
+            (stamp.hour, stamp.minute // RVOL_INTERVAL_MINUTES * RVOL_INTERVAL_MINUTES), []
+        ).append((stamp, volume))
+    result = []
+    for slot, rows in sorted(buckets.items()):
+        # Never classify a still-forming bucket as low volume.
+        if len(rows) != RVOL_INTERVAL_MINUTES or slot not in baseline:
+            continue
+        average, sample_count = baseline[slot]
+        if average <= 0:
+            continue
+        value = sum(volume for _, volume in rows) / average
+        stamp = min(stamp for stamp, _ in rows)
+        result.append({
+            "timestamp": stamp.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "rvol": value,
+            "color": _rvol_color(value),
+            "baseline_sessions": sample_count,
+        })
+    return result
+
+
+def _download_payload(day: date_type, offset: int, use_cache: bool = True,
+                      include_rvol: bool = False) -> dict:
     if use_cache:
         cached = _cached_payload(day, offset)
         if cached is not None:
@@ -192,7 +294,7 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True) -> di
         "end": _utc_at(date_type.fromisoformat(prior_date), 16), "limit": 10000,
     }).get("bars", {}).get(symbol, [])
 
-    return {
+    result = {
         "session_date": day.isoformat(),
         "option_symbol": symbol,
         "option_strike": int(int(symbol[-8:]) / 1000),
@@ -201,6 +303,9 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True) -> di
         "previous_spy_bars": prior_stock,
         "previous_option_bars": prior_options,
     }
+    if include_rvol:
+        result["rvol_series"] = _rvol_series(day, stock)
+    return result
 
 
 def main() -> int:

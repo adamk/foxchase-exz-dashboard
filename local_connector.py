@@ -45,7 +45,7 @@ def _cached_sessions() -> list[dict]:
     except OSError:
         pass
     with _cache_lock:
-        for session_date, _offset in _payload_cache:
+        for session_date, _offset, _live in _payload_cache:
             sessions.setdefault(session_date, "UNKNOWN")
     return [{"date": day, "regime": sessions[day]} for day in sorted(sessions)]
 
@@ -77,7 +77,9 @@ class Handler(BaseHTTPRequestHandler):
                 with _cache_lock:
                     payload = _payload_cache.get(cache_key)
             if payload is None:
-                payload = _download_payload(session_date, offset, use_cache=not live)
+                payload = _download_payload(
+                    session_date, offset, use_cache=not live, include_rvol=live
+                )
                 if not live:
                     with _cache_lock:
                         _payload_cache[cache_key] = payload
