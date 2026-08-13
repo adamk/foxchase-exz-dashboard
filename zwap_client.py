@@ -230,10 +230,18 @@ def _rvol_series(day: date_type, current_stock: list[dict]) -> list[dict]:
         # Never classify a still-forming bucket as low volume.
         if len(rows) != RVOL_INTERVAL_MINUTES or slot not in baseline:
             continue
-        average, sample_count = baseline[slot]
-        if average <= 0:
+        historical_average, sample_count = baseline[slot]
+        current_volume = sum(volume for _, volume in rows)
+        if historical_average <= 0 or sample_count <= 0:
             continue
-        value = sum(volume for _, volume in rows) / average
+        # Match the indicator's realtime matrix behavior: the completed current
+        # interval is present alongside the prior-session samples when the
+        # column average is calculated. This differs slightly from a strictly
+        # prior-only denominator near color boundaries (for example 0.80).
+        comparison_average = (
+            historical_average * sample_count + current_volume
+        ) / (sample_count + 1)
+        value = current_volume / comparison_average
         stamp = min(stamp for stamp, _ in rows)
         result.append({
             "timestamp": stamp.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
