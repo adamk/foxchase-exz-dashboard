@@ -51,6 +51,19 @@ def _read_json(path: Path):
         return None
 
 
+def _latest_atm_strike(day: date_type, spy_bars: list[dict]) -> int:
+    """Return the strike nearest the latest available regular-session SPY price."""
+    regular = [
+        row for row in spy_bars
+        if _utc_at(day, 9, 30) <= row.get("t", "") < _utc_at(day, 16)
+    ]
+    if not regular:
+        raise RuntimeError(f"no regular-session SPY bar returned for {day}")
+    latest = max(regular, key=lambda row: row.get("t", ""))
+    latest_spot = float(latest.get("c") or latest.get("o"))
+    return math.floor(latest_spot + 0.5)
+
+
 def _cached_payload(day: date_type, offset: int) -> dict | None:
     """Load an existing local session cache before making Alpaca requests."""
     root = _cache_root()
@@ -64,15 +77,10 @@ def _cached_payload(day: date_type, offset: int) -> dict | None:
     if not isinstance(spy_bars, list) or not isinstance(previous_spy_bars, list):
         return None
 
-    metadata = _read_json(root / f"data_{day_text}_meta.json") or {}
     try:
-        atm = float(metadata["atm_strike"])
-    except (KeyError, TypeError, ValueError):
-        opening = next((row for row in spy_bars if row.get("t", "") >= _utc_at(day, 9, 30)), None)
-        if not opening:
-            return None
-        opening_spot = float(opening.get("o") or opening.get("c"))
-        atm = math.floor(opening_spot + 0.5)
+        atm = _latest_atm_strike(day, spy_bars)
+    except (RuntimeError, TypeError, ValueError):
+        return None
     target = int(atm) + int(offset)
 
     candidates: list[tuple[str, list]] = []
@@ -268,11 +276,7 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
     }).get("bars", [])
     if not stock:
         raise RuntimeError(f"no SPY bars returned for {day}")
-    opening = [row for row in stock if row.get("t", "") >= _utc_at(day, 9, 30)]
-    if not opening:
-        raise RuntimeError(f"no regular-session opening bar returned for {day}")
-    opening_spot = float(opening[0].get("o") or opening[0].get("c"))
-    atm = math.floor(opening_spot + 0.5)
+    atm = _latest_atm_strike(day, stock)
     target = atm + int(offset)
     symbols = [_occ_symbol(day, target + step) for step in (0, 1, -1, 2, -2)]
     options = _get("/v1beta1/options/bars", {
@@ -319,7 +323,7 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit user-owned Alpaca bars to the ZWAP compute API")
     parser.add_argument("--date", required=True, help="session date YYYY-MM-DD")
-    parser.add_argument("--offset", type=int, default=1, help="strike offset from opening ATM")
+    parser.add_argument("--offset", type=int, default=1, help="strike offset from latest-price ATM")
     parser.add_argument("--api-url", default=os.getenv(
         "ZWAP_API_URL",
         "https://exz-api.foxchasetrading.com/api/public/exz/historical",
