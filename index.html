@@ -39,9 +39,9 @@
   </div>
   <section class="chart"><h2>Selected call</h2><canvas id="price" class="study" width="1000" height="240"></canvas></section>
   <section class="chart"><div class="chart-head"><h2>Extrinsic-value z-score</h2><label>Y-axis <select id="zScale"><option value="morning">Morning anchored</option><option value="session">Full session auto</option></select></label></div><canvas id="z" class="study" width="1000" height="240"></canvas><div id="zScaleNote" class="note">Morning anchored keeps the scale stable after noon; switch to Full session auto to study afternoon extremes.</div></section>
-  <section id="rvolSection" class="chart" hidden><h2>SPY 5-minute relative volume</h2><canvas id="rvol" class="study" width="1000" height="240"></canvas><div class="note">Completed five-minute SPY volume versus the same interval across the prior 10 regular sessions, calculated locally from your Alpaca SIP data. Available only with an active EXZ Live entitlement.</div></section>
+  <section id="rvolSection" class="chart" hidden><h2>SPY 5-minute relative volume</h2><canvas id="rvol" class="study" width="1000" height="240"></canvas><div class="note">Completed five-minute SPY relative-volume readings from the Foxchase TradingView alert feed, with local Alpaca calculation as a fallback. Available only with an active EXZ Live entitlement.</div></section>
 </main>
 <script src="config.js"></script>
-<script src="app.js?v=20260813-2"></script>
+<script src="app.js?v=20260814-1"></script>
 </body>
 </html>

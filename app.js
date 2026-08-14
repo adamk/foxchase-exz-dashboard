@@ -10,6 +10,7 @@
   const sessionId=(()=>{const key='foxchase_zwap_session';let v=localStorage.getItem(key);if(!v){v=crypto.randomUUID().replaceAll('-','');localStorage.setItem(key,v)}return v})();
   const activationUrl=cfg.activationUrl||'https://exz-api.foxchasetrading.com/api/public/exz/activate';
   const liveComputeUrl=cfg.liveComputeUrl||'https://exz-api.foxchasetrading.com/api/public/exz/live';
+  const rvolUrl=cfg.rvolUrl||'https://exz-api.foxchasetrading.com/api/public/exz/rvol';
   const liveRefreshMs=Math.max(15000,Number(cfg.liveRefreshMs||30000));
   const liveTokenKey='foxchase_exz_live_token';
   const liveExpiryKey='foxchase_exz_live_expires';
@@ -181,7 +182,7 @@
       status('Computing the study…');
       const headers={'Content-Type':'application/json','X-ZWAP-Session':sessionId};
       if(isLiveDate)headers.Authorization=`Bearer ${token}`;else if(cfg.computeToken)headers.Authorization=`Bearer ${cfg.computeToken}`;
-      const {rvol_series:rvolSeries=[],...computePayload}=payload;
+      const {rvol_series:alpacaRvolSeries=[],...computePayload}=payload;
       const response=await fetch(computeUrl,{method:'POST',headers,body:JSON.stringify(computePayload)});
       const result=await response.json();
       if(!response.ok){
@@ -191,6 +192,13 @@
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=result.regime||'—';
       if(result.regime&&result.regime!=='UNKNOWN'){cachedRegimes[date]=result.regime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
+      // The TradingView indicator is authoritative for the displayed color
+      // sequence. Keep the locally calculated Alpaca series only as a fallback
+      // when the alert feed has not delivered any completed bars yet.
+      let rvolSeries=alpacaRvolSeries;
+      if(isLiveDate&&rvolUrl){
+        try{const rvolResponse=await fetch(`${rvolUrl}?date=${encodeURIComponent(date)}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'}),rvolResult=await rvolResponse.json();if(rvolResponse.ok&&Array.isArray(rvolResult.series)&&rvolResult.series.length)rvolSeries=rvolResult.series}catch(_){}
+      }
       $('rvolSection').hidden=!(isLiveDate&&rvolSeries.length);
       $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';const visualSeries=chartSeries(p);renderedSeries=visualSeries;renderedRvol=rvolSeries;crosshairIndex=null;drawPrice(visualSeries);drawZ(visualSeries);if(isLiveDate)drawRvol(visualSeries,renderedRvol);
       status(isLiveDate?`Updated ${result.option_symbol||'session'} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'} · Study ready.`);
