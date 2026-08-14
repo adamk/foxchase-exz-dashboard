@@ -274,6 +274,10 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
         "timeframe": "1Min", "start": stock_start, "end": stock_end,
         "limit": 10000, "feed": "sip", "adjustment": "raw",
     }).get("bars", [])
+    # Alpaca can include a bar stamped exactly at the requested end time.
+    # Keep the interval half-open so 04:00-16:00 contains at most 720 one-minute
+    # bars and never trips the compute API's current-session safety limit.
+    stock = [row for row in stock if stock_start <= row.get("t", "") < stock_end]
     if not stock:
         raise RuntimeError(f"no SPY bars returned for {day}")
     atm = _latest_atm_strike(day, stock)
