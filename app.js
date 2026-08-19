@@ -31,9 +31,9 @@
   function stopLiveRefresh(){if(liveRefreshTimer!==null){clearInterval(liveRefreshTimer);liveRefreshTimer=null}}
   function scheduleLiveRefresh(){
     stopLiveRefresh();
-    if($('date').value!==etDate()||!liveToken())return;
+    if($('date').value!==etDate()||!liveToken()||etMinutes(Date.now())>=16*60)return;
     liveRefreshTimer=setInterval(()=>{
-      if($('date').value!==etDate()||!liveToken()){stopLiveRefresh();return}
+      if($('date').value!==etDate()||!liveToken()||etMinutes(Date.now())>=16*60){stopLiveRefresh();return}
       load({automatic:true});
     },liveRefreshMs);
   }
@@ -265,7 +265,8 @@
         if(isLiveDate)drawRvol(visualSeries,renderedRvol);
       }
       const levelText=normalizedLevels?` · PMH ${normalizedLevels.PMH??normalizedLevels.pmh??'—'} / PML ${normalizedLevels.PML??normalizedLevels.pml??'—'} / YDH ${normalizedLevels.YDH??normalizedLevels.ydh??'—'} / YDL ${normalizedLevels.YDL??normalizedLevels.ydl??'—'}`:'';
-      status(isLiveDate?`Updated ${result.option_symbol||'session'}${levelText} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'}${levelText} · Study ready.`);
+      const marketClosed=isLiveDate&&etMinutes(Date.now())>=16*60;
+      status(isLiveDate?`Updated ${result.option_symbol||'session'}${levelText} · ${marketClosed?'regular session closed; refresh stopped.':`live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`}`:`Loaded ${result.option_symbol||'session'}${levelText} · Study ready.`);
       if(isLiveDate)scheduleLiveRefresh();
       refreshSessions();
     }catch(e){
