@@ -158,7 +158,8 @@
   function sessionRegime(s){return (s.regime==='UNKNOWN'&&cachedRegimes[s.date])||s.regime||'UNKNOWN'}
   function classifyReturnedLevels(levels,fallback){
     if(!levels)return fallback||'UNKNOWN';
-    const pmh=Number(levels.PMH),pml=Number(levels.PML),ydh=Number(levels.YDH),ydl=Number(levels.YDL);
+    const value=(...names)=>{for(const name of names){if(levels[name]!=null)return Number(levels[name])}return NaN};
+    const pmh=value('PMH','pmh','premarket_high','pre_market_high'),pml=value('PML','pml','premarket_low','pre_market_low'),ydh=value('YDH','ydh','yesterday_high','prior_high'),ydl=value('YDL','ydl','yesterday_low','prior_low');
     if(![pmh,pml,ydh,ydl].every(Number.isFinite))return fallback||'UNKNOWN';
     const close=(a,b)=>Math.abs(a-b)<=0.01;
     if(close(pml,ydl)||close(pmh,ydh)||close(pml,ydh)||close(pmh,ydl))return 'R1';
@@ -208,7 +209,8 @@
         throw new Error(result.error||'calculation failed')
       }
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
-      const displayedRegime=classifyReturnedLevels(result.levels,result.regime);
+      const returnedLevels=result.levels||result.key_levels||result.keyLevels||result.level_summary;
+      const displayedRegime=classifyReturnedLevels(returnedLevels,result.regime);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=displayedRegime;
       if(displayedRegime&&displayedRegime!=='UNKNOWN'){cachedRegimes[date]=displayedRegime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
       // The TradingView indicator is authoritative for the displayed color
@@ -235,7 +237,8 @@
         drawZ(visualSeries);
         if(isLiveDate)drawRvol(visualSeries,renderedRvol);
       }
-      status(isLiveDate?`Updated ${result.option_symbol||'session'} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'} · Study ready.`);
+      const levelText=returnedLevels?` · PMH ${returnedLevels.PMH??returnedLevels.pmh??'—'} / PML ${returnedLevels.PML??returnedLevels.pml??'—'} / YDH ${returnedLevels.YDH??returnedLevels.ydh??'—'} / YDL ${returnedLevels.YDL??returnedLevels.ydl??'—'}`:'';
+      status(isLiveDate?`Updated ${result.option_symbol||'session'}${levelText} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'}${levelText} · Study ready.`);
       if(isLiveDate)scheduleLiveRefresh();
       refreshSessions();
     }catch(e){
