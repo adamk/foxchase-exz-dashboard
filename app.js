@@ -23,6 +23,7 @@
   let loadInFlight=false;
   let renderedSeries=null;
   let renderedRvol=null;
+  let renderedDataSignature=null;
   let crosshairIndex=null;
   const zScaleKey='foxchase_exz_z_scale';
   const sessionsUrl=cfg.sessionsUrl||(cfg.connectorUrl||'').replace(/\/api\/session$/,'/api/sessions');
@@ -57,7 +58,7 @@
     const XPoint=point=>XIndex(indexByTimestamp.get(point.timestamp)??0);
     return {plotRight,XIndex,XPoint};
   }
-  function drawGrid(x,l,t,r,b,lo,hi){x.font='10px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(r,y);x.stroke();x.fillStyle='#8b949e';x.textAlign='right';x.fillText(v.toFixed(2),r-4,y+3)}}
+  function drawGrid(x,l,t,r,b,lo,hi,labelRight=r,gridRight=r){x.font='10px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(gridRight,y);x.stroke();x.fillStyle='#8b949e';x.textAlign='right';x.fillText(v.toFixed(2),labelRight-4,y+3)}}
   function drawTimeAxis(x,p,l,r,b,t){
     // Use quarter-hour labels only. The former mixture of quarter-hour and
     // evenly-spaced labels could place two different timestamps on top of one
@@ -99,7 +100,7 @@
       x.textAlign=isFirst?'left':isLast?'right':'center';x.fillText(label,cx,b+17)
     }
   }
-  function drawPrice(series){const {x,w,h}=setupCanvas('price'),p=series.filter(v=>v.option_close!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,vals=p.flatMap(v=>[v.option_low??v.option_close,v.option_high??v.option_close]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max((hi-lo)*.12,.05);lo-=pad;hi+=pad;const {plotRight,XPoint}=chartLayout(series,l,r),Y=v=>b-(b-t)*(v-lo)/(hi-lo),step=(plotRight-l)/Math.max(1,series.length-1),candleWidth=Math.max(3,Math.min(10,step*.72));drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);p.forEach(v=>{const o=Number(v.option_open??v.option_close),c=Number(v.option_close),color=c>=o?'#39ff14':'#ff391f',cx=XPoint(v);x.strokeStyle=color;x.beginPath();x.moveTo(cx,Y(Number(v.option_high??c)));x.lineTo(cx,Y(Number(v.option_low??c)));x.stroke();x.fillStyle=color;const top=Y(Math.max(o,c)),bottom=Y(Math.min(o,c));x.fillRect(cx-candleWidth/2,top,candleWidth,Math.max(1,bottom-top))})}
+  function drawPrice(series){const {x,w,h}=setupCanvas('price'),p=series.filter(v=>v.option_close!=null);if(!p.length)return;const l=10,r=w-10,t=10,b=h-38,axisGutter=58,plotR=Math.max(l+80,r-axisGutter),vals=p.flatMap(v=>[v.option_low??v.option_close,v.option_high??v.option_close]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max((hi-lo)*.12,.05);lo-=pad;hi+=pad;const {plotRight,XPoint}=chartLayout(series,l,plotR),Y=v=>b-(b-t)*(v-lo)/(hi-lo),step=(plotRight-l)/Math.max(1,series.length-1),candleWidth=Math.max(3,Math.min(10,step*.72));x.fillStyle='#0d1117';x.fillRect(plotR,t,r-plotR,b-t);drawGrid(x,l,t,r,b,lo,hi,r,plotR);x.strokeStyle='#30363d';x.beginPath();x.moveTo(plotR,t);x.lineTo(plotR,b);x.stroke();drawTimeAxis(x,series,l,plotRight,b,t);p.forEach(v=>{const o=Number(v.option_open??v.option_close),c=Number(v.option_close),color=c>=o?'#39ff14':'#ff391f',cx=XPoint(v);x.strokeStyle=color;x.beginPath();x.moveTo(cx,Y(Number(v.option_high??c)));x.lineTo(cx,Y(Number(v.option_low??c)));x.stroke();x.fillStyle=color;const top=Y(Math.max(o,c)),bottom=Y(Math.min(o,c));x.fillRect(cx-candleWidth/2,top,candleWidth,Math.max(1,bottom-top))})}
   function drawZ(series){
     const {x,w,h}=setupCanvas('z'),p=series.filter(v=>v.ex_z!=null);if(!p.length)return;
     // Size the axis from the complete morning (09:30–12:00 ET), not merely
@@ -108,8 +109,8 @@
     // spikes remain clamped and reported as overflow.
     const scaleMode=$('zScale')?.value==='session'?'session':'morning',morning=p.filter(v=>{const m=etMinutes(v.timestamp);return m>=570&&m<720}),reference=scaleMode==='session'?p:(morning.length>=3?morning:p.slice(0,30)),ref=reference.map(v=>Number(v.ex_z)),
       l=10,r=w-10,t=10,b=h-48,lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1;
-    const {plotRight,XPoint}=chartLayout(series,l,r),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo),plotY=v=>Math.max(t,Math.min(b,Y(v)));
-    drawGrid(x,l,t,r,b,lo,hi);drawTimeAxis(x,series,l,plotRight,b,t);
+    const axisGutter=58,plotR=Math.max(l+80,r-axisGutter),{plotRight,XPoint}=chartLayout(series,l,plotR),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo),plotY=v=>Math.max(t,Math.min(b,Y(v)));
+    x.fillStyle='#0d1117';x.fillRect(plotR,t,r-plotR,b-t);drawGrid(x,l,t,r,b,lo,hi,r,plotR);x.strokeStyle='#30363d';x.beginPath();x.moveTo(plotR,t);x.lineTo(plotR,b);x.stroke();drawTimeAxis(x,series,l,plotRight,b,t);
     x.setLineDash([4,4]);[-1,0,1].forEach(v=>{x.beginPath();x.strokeStyle=v===0?'#9da7b3':'#58616d';x.lineWidth=v===0?1.5:1;x.moveTo(l,plotY(v));x.lineTo(plotRight,plotY(v));x.stroke()});x.setLineDash([]);x.lineWidth=1;
     x.save();x.beginPath();x.rect(l,t,plotRight-l,b-t);x.clip();x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();
     p.forEach((v,i)=>i?x.lineTo(X(v),plotY(Number(v.ex_z))):x.moveTo(X(v),plotY(Number(v.ex_z))));x.stroke();x.restore();
@@ -121,8 +122,8 @@
     // Use the exact elapsed-session width of the one-minute price/EXZ series.
     // A five-minute rVol bar therefore spans five one-minute chart slots and
     // does not stretch across the unused morning canvas.
-    const {plotRight}=chartLayout(series,l,r),lastPriceMinute=Math.max(571,...series.map(v=>etMinutes(v.timestamp)).filter(Number.isFinite)),elapsedMinutes=Math.max(1,lastPriceMinute-570),slotWidth=(plotRight-l)*5/elapsedMinutes,Y=v=>b-(b-t)*(v-lo)/(hi-lo),X=v=>l+(plotRight-l)*Math.max(0,Math.min(elapsedMinutes,etMinutes(v.timestamp)-570))/elapsedMinutes;
-    drawGrid(x,l,t,r,b,lo,hi);
+    const axisGutter=58,plotR=Math.max(l+80,r-axisGutter),{plotRight}=chartLayout(series,l,plotR),lastPriceMinute=Math.max(571,...series.map(v=>etMinutes(v.timestamp)).filter(Number.isFinite)),elapsedMinutes=Math.max(1,lastPriceMinute-570),slotWidth=(plotRight-l)*5/elapsedMinutes,Y=v=>b-(b-t)*(v-lo)/(hi-lo),X=v=>l+(plotRight-l)*Math.max(0,Math.min(elapsedMinutes,etMinutes(v.timestamp)-570))/elapsedMinutes;
+    x.fillStyle='#0d1117';x.fillRect(plotR,t,r-plotR,b-t);drawGrid(x,l,t,r,b,lo,hi,r,plotR);x.strokeStyle='#30363d';x.beginPath();x.moveTo(plotR,t);x.lineTo(plotR,b);x.stroke();
     // The shared time-axis helper spaces labels by array index. rVol instead
     // occupies absolute five-minute RTH slots, so its labels must use the same
     // clock coordinate or they appear irregularly spaced.
@@ -139,7 +140,7 @@
     const timeLabel=etAxisTime(series[index].timestamp);
     [['price',38],['z',48],['rvol',38]].forEach(([id,bottomPad])=>{
       const canvas=$(id),w=canvas.clientWidth,h=canvas.clientHeight,dpr=devicePixelRatio||1,ctx=canvas.getContext('2d');
-      ctx.setTransform(dpr,0,0,dpr,0,0);const l=10,r=w-10,{plotRight}=chartLayout(series,l,r),cx=l+(plotRight-l)*index/Math.max(1,series.length-1),plotBottom=h-bottomPad;
+      ctx.setTransform(dpr,0,0,dpr,0,0);const l=10,r=w-10,plotR=Math.max(l+80,r-58),{plotRight}=chartLayout(series,l,plotR),cx=l+(plotRight-l)*index/Math.max(1,series.length-1),plotBottom=h-bottomPad;
       ctx.save();ctx.beginPath();ctx.rect(l,10,plotRight-l,h-bottomPad-10);ctx.clip();ctx.strokeStyle='#c9d1d9';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(cx,10);ctx.lineTo(cx,h-bottomPad);ctx.stroke();ctx.restore();
       if(timeLabel){
         ctx.save();ctx.setLineDash([]);ctx.font='600 11px sans-serif';const padX=6,labelWidth=ctx.measureText(timeLabel).width+padX*2,labelHeight=20;
@@ -151,11 +152,24 @@
   }
   function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawRvol(renderedSeries,renderedRvol);drawCrosshair(renderedSeries,crosshairIndex)}
   function updateCrosshair(event){
-    if(!renderedSeries)return;const canvas=event.currentTarget,rect=canvas.getBoundingClientRect(),x=Math.max(10,Math.min(canvas.clientWidth-10,event.clientX-rect.left)),l=10,r=canvas.clientWidth-10,{plotRight}=chartLayout(renderedSeries,l,r);
+    if(!renderedSeries)return;const canvas=event.currentTarget,rect=canvas.getBoundingClientRect(),x=Math.max(10,Math.min(canvas.clientWidth-10,event.clientX-rect.left)),l=10,r=canvas.clientWidth-10,plotR=Math.max(l+80,r-58),{plotRight}=chartLayout(renderedSeries,l,plotR);
     crosshairIndex=Math.max(0,Math.min(renderedSeries.length-1,Math.round((x-l)/Math.max(1,plotRight-l)*(renderedSeries.length-1))));redrawWithCrosshair();
   }
   function sessionRegime(s){return (s.regime==='UNKNOWN'&&cachedRegimes[s.date])||s.regime||'UNKNOWN'}
-  function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');picker.innerHTML=visible.length?visible.map(s=>`<option value="${s.date}" ${s.date===current?'selected':''}>${s.date} · ${sessionRegime(s)}</option>`).join(''):'<option value="">No cached historical sessions</option>';if(current&&visible.some(s=>s.date===current))picker.value=current}
+  function classifyReturnedLevels(levels,fallback){
+    if(!levels)return fallback||'UNKNOWN';
+    const pmh=Number(levels.PMH),pml=Number(levels.PML),ydh=Number(levels.YDH),ydl=Number(levels.YDL);
+    if(![pmh,pml,ydh,ydl].every(Number.isFinite))return fallback||'UNKNOWN';
+    const close=(a,b)=>Math.abs(a-b)<=0.01;
+    if(close(pml,ydl)||close(pmh,ydh)||close(pml,ydh)||close(pmh,ydl))return 'R1';
+    if(pml<ydl&&pmh>ydh)return 'R6';
+    if(pml>=ydh)return 'R2';
+    if(pmh<=ydl)return 'R3';
+    if(pmh>ydh&&pml>=ydl&&pml<ydh)return 'R4';
+    if(pml<ydl&&pmh<=ydh&&pmh>ydl)return 'R5';
+    return 'R1';
+  }
+  function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');const liveSelected=current===etDate();const placeholder=liveSelected?'Today (live — not cached)':'Select a cached session';picker.innerHTML=`<option value="">${placeholder}</option>`+visible.map(s=>`<option value="${s.date}">${s.date} · ${sessionRegime(s)}</option>`).join('');picker.value=visible.some(s=>s.date===current)?current:''}
   async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){sessions=result.sessions;renderSessions()}}catch(_) {}}
   async function heartbeat(){if(!cfg.presenceUrl)return;try{await fetch(cfg.presenceUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})})}catch(_){}}
   async function activate(){const code=$('activationCode').value.trim();if(!code){status('Enter your Whop license key or complimentary activation code.');return}$('activate').disabled=true;status('Checking live access…');try{const response=await fetch(activationUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({activation_code:code})});const result=await response.json();if(!response.ok)throw new Error(result.error||'activation failed');localStorage.setItem(liveTokenKey,result.access_token);localStorage.setItem(liveExpiryKey,String(Date.parse(result.expires_at)));if(result.license_expires_at)localStorage.setItem(liveLicenseExpiryKey,String(Date.parse(result.license_expires_at)));else localStorage.removeItem(liveLicenseExpiryKey);$('activationCode').value='';updateLiveStatus();status('Live access activated. Select today and press Load session.')}catch(e){status(`Activation error: ${e.message}`)}finally{$('activate').disabled=false}}
@@ -164,8 +178,12 @@
     const date=$('date').value,offset=Number($('offset').value||1);
     if(!date){status('Choose a date first.');return}
     const isLiveDate=date===etDate();
-    $('rvolSection').hidden=true;
-    if(!isLiveDate)renderedRvol=[];
+    // Keep the live rVol panel mounted while an automatic refresh is in
+    // flight. Hiding it here and unhiding it after every fetch caused the
+    // page to jump vertically every 30 seconds, which looked like a reload.
+    // Historical sessions never show rVol, so hide it only when changing to
+    // that mode.
+    if(!isLiveDate){$('rvolSection').hidden=true;renderedRvol=[];}
     if(date>etDate()){stopLiveRefresh();status('Live access is limited to the current trading day.');return}
     const token=isLiveDate?liveToken():'';
     if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active EXZ Live entitlement from Foxchase Trading.');return}
@@ -190,8 +208,9 @@
         throw new Error(result.error||'calculation failed')
       }
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
-      $('contract').textContent=result.option_symbol||'—';$('regime').textContent=result.regime||'—';
-      if(result.regime&&result.regime!=='UNKNOWN'){cachedRegimes[date]=result.regime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
+      const displayedRegime=classifyReturnedLevels(result.levels,result.regime);
+      $('contract').textContent=result.option_symbol||'—';$('regime').textContent=displayedRegime;
+      if(displayedRegime&&displayedRegime!=='UNKNOWN'){cachedRegimes[date]=displayedRegime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
       // The TradingView indicator is authoritative for the displayed color
       // sequence. Keep the locally calculated Alpaca series only as a fallback
       // when the alert feed has not delivered any completed bars yet.
@@ -200,14 +219,35 @@
         try{const rvolResponse=await fetch(`${rvolUrl}?date=${encodeURIComponent(date)}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'}),rvolResult=await rvolResponse.json();if(rvolResponse.ok&&Array.isArray(rvolResult.series)&&rvolResult.series.length)rvolSeries=rvolResult.series}catch(_){}
       }
       $('rvolSection').hidden=!(isLiveDate&&rvolSeries.length);
-      $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';const visualSeries=chartSeries(p);renderedSeries=visualSeries;renderedRvol=rvolSeries;crosshairIndex=null;drawPrice(visualSeries);drawZ(visualSeries);if(isLiveDate)drawRvol(visualSeries,renderedRvol);
+      const visualSeries=chartSeries(p);
+      // The server can return the identical completed-bar set between polls.
+      // Preserve the current canvases in that case rather than clearing and
+      // repainting them, which removes the visible refresh flash.
+      const signature=JSON.stringify({contract:result.option_symbol||'',series:visualSeries,rvol:isLiveDate?rvolSeries:[]});
+      const visualDataChanged=signature!==renderedDataSignature;
+      $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';
+      if(visualDataChanged){
+        renderedDataSignature=signature;
+        renderedSeries=visualSeries;
+        renderedRvol=rvolSeries;
+        crosshairIndex=null;
+        drawPrice(visualSeries);
+        drawZ(visualSeries);
+        if(isLiveDate)drawRvol(visualSeries,renderedRvol);
+      }
       status(isLiveDate?`Updated ${result.option_symbol||'session'} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'} · Study ready.`);
       if(isLiveDate)scheduleLiveRefresh();
       refreshSessions();
-    }catch(e){status(`Error: ${e.message}`)}finally{$('load').disabled=false;loadInFlight=false}
+    }catch(e){
+      // A failed live refresh previously left the last successful regime in
+      // place, making an obsolete classification look current. Never present
+      // stale live data as an active session result.
+      if(isLiveDate){$('contract').textContent='—';$('regime').textContent='—';$('latest').textContent='—';}
+      status(`Error: ${e.message}`)
+    }finally{$('load').disabled=false;loadInFlight=false}
   }
   $('date').max=etDate();
-  $('date').addEventListener('change',()=>{$('offset').value=0});
+  $('date').addEventListener('change',()=>{$('offset').value=0;renderSessions()});
   ['price','z','rvol'].forEach(id=>{const canvas=$(id);canvas.addEventListener('pointermove',updateCrosshair);canvas.addEventListener('pointerleave',()=>{crosshairIndex=null;redrawWithCrosshair()})});
   $('regimeFilter').addEventListener('change',renderSessions);
   if($('zScale')){
