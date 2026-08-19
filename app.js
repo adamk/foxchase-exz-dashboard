@@ -170,6 +170,27 @@
     if(pml<ydl&&pmh<=ydh&&pmh>ydl)return 'R5';
     return 'R1';
   }
+  function confirmedFiveMinutePml(bars,sessionDate){
+    if(!Array.isArray(bars)||!bars.length)return NaN;
+    const fmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+    const rows=[];
+    for(const row of bars){
+      const d=new Date(row.t||row.timestamp);if(Number.isNaN(d.getTime()))continue;
+      const parts=Object.fromEntries(fmt.formatToParts(d).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+      const day=`${parts.year}-${parts.month}-${parts.day}`;if(day!==sessionDate)continue;
+      const minute=Number(parts.hour)*60+Number(parts.minute);if(minute>=570||minute<240)continue;
+      const low=Number(row.l??row.low);if(!Number.isFinite(low))continue;
+      rows.push({minute,low});
+    }
+    if(!rows.length)return NaN;
+    const first=Math.min(...rows.map(r=>r.minute));
+    const usable=rows.filter(r=>r.minute>=first+5);
+    const groups=new Map();
+    for(const r of (usable.length?usable:rows)){const key=Math.floor(r.minute/5)*5;groups.set(key,Math.min(groups.get(key)??Infinity,r.low))}
+    const lows=[...groups.values()].sort((a,b)=>a-b);if(!lows.length)return NaN;
+    for(const candidate of lows)if(lows.filter(v=>v<=candidate+0.15).length>=4)return candidate;
+    return lows[0];
+  }
   function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');const liveSelected=current===etDate();const placeholder=liveSelected?'Today (live — not cached)':'Select a cached session';picker.innerHTML=`<option value="">${placeholder}</option>`+visible.map(s=>`<option value="${s.date}">${s.date} · ${sessionRegime(s)}</option>`).join('');picker.value=visible.some(s=>s.date===current)?current:''}
   async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){sessions=result.sessions;renderSessions()}}catch(_) {}}
   async function heartbeat(){if(!cfg.presenceUrl)return;try{await fetch(cfg.presenceUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})})}catch(_){}}
@@ -210,7 +231,13 @@
       }
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
       const returnedLevels=result.levels||result.key_levels||result.keyLevels||result.level_summary;
-      const displayedRegime=classifyReturnedLevels(returnedLevels,result.regime);
+      const correctedPml=confirmedFiveMinutePml(computePayload.spy_bars,date);
+      const normalizedLevels=returnedLevels?{...returnedLevels}:null;
+      if(normalizedLevels&&Number.isFinite(correctedPml)&&Number.isFinite(Number(normalizedLevels.PML??normalizedLevels.pml))){
+        const ydl=Number(normalizedLevels.YDL??normalizedLevels.ydl);
+        if(Number.isFinite(ydl)&&correctedPml>Number(normalizedLevels.PML??normalizedLevels.pml)&&correctedPml>=ydl){normalizedLevels.PML=correctedPml}
+      }
+      const displayedRegime=classifyReturnedLevels(normalizedLevels,result.regime);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=displayedRegime;
       if(displayedRegime&&displayedRegime!=='UNKNOWN'){cachedRegimes[date]=displayedRegime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
       // The TradingView indicator is authoritative for the displayed color
@@ -237,7 +264,7 @@
         drawZ(visualSeries);
         if(isLiveDate)drawRvol(visualSeries,renderedRvol);
       }
-      const levelText=returnedLevels?` · PMH ${returnedLevels.PMH??returnedLevels.pmh??'—'} / PML ${returnedLevels.PML??returnedLevels.pml??'—'} / YDH ${returnedLevels.YDH??returnedLevels.ydh??'—'} / YDL ${returnedLevels.YDL??returnedLevels.ydl??'—'}`:'';
+      const levelText=normalizedLevels?` · PMH ${normalizedLevels.PMH??normalizedLevels.pmh??'—'} / PML ${normalizedLevels.PML??normalizedLevels.pml??'—'} / YDH ${normalizedLevels.YDH??normalizedLevels.ydh??'—'} / YDL ${normalizedLevels.YDL??normalizedLevels.ydl??'—'}`:'';
       status(isLiveDate?`Updated ${result.option_symbol||'session'}${levelText} · live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`:`Loaded ${result.option_symbol||'session'}${levelText} · Study ready.`);
       if(isLiveDate)scheduleLiveRefresh();
       refreshSessions();
