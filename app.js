@@ -150,7 +150,12 @@
       }
     });
   }
-  function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawRvol(renderedSeries,renderedRvol);drawCrosshair(renderedSeries,crosshairIndex)}
+  function updateLatestZ(){
+    if(!renderedSeries){$('latest').textContent='—';return}
+    const point=(crosshairIndex!=null&&$('date').value!==etDate())?renderedSeries[crosshairIndex]:renderedSeries[renderedSeries.length-1];
+    $('latest').textContent=point&&point.ex_z!=null?fmt(point.ex_z):'—';
+  }
+  function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawRvol(renderedSeries,renderedRvol);drawCrosshair(renderedSeries,crosshairIndex);updateLatestZ()}
   function updateCrosshair(event){
     if(!renderedSeries)return;const canvas=event.currentTarget,rect=canvas.getBoundingClientRect(),x=Math.max(10,Math.min(canvas.clientWidth-10,event.clientX-rect.left)),l=10,r=canvas.clientWidth-10,plotR=Math.max(l+80,r-58),{plotRight}=chartLayout(renderedSeries,l,plotR);
     crosshairIndex=Math.max(0,Math.min(renderedSeries.length-1,Math.round((x-l)/Math.max(1,plotRight-l)*(renderedSeries.length-1))));redrawWithCrosshair();
