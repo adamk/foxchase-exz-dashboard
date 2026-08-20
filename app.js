@@ -130,7 +130,7 @@
     x.font='10px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#8b949e';x.textAlign='center';
     for(let minute=570;minute<=lastPriceMinute;minute+=30){
       const cx=l+(plotRight-l)*(minute-570)/elapsedMinutes,hour=Math.floor(minute/60),mins=minute%60,displayHour=((hour+11)%12)+1,label=`${displayHour}:${String(mins).padStart(2,'0')} ${hour>=12?'PM':'AM'}`;
-      x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.fillText(label,cx,b+17)
+      x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.textAlign=minute===570?'left':'center';x.fillText(label,cx,b+17)
     }
     x.setLineDash([4,4]);x.strokeStyle='#8b949e';x.beginPath();x.moveTo(l,Y(1));x.lineTo(plotRight,Y(1));x.stroke();x.setLineDash([]);
     p.forEach(v=>{const value=Number(v.rvol),left=X(v),width=Math.max(1,slotWidth*.9);x.fillStyle=colors[v.color]||colors.grey;x.fillRect(left,Y(value),width,Math.max(1,b-Y(value)))})
