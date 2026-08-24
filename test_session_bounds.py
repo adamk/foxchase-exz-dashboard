@@ -40,9 +40,9 @@ def test_download_excludes_end_boundary_bar():
             symbol = params["symbols"].split(",")[0]
             return {"bars": {symbol: [{"t": "2026-08-11T19:59:00Z", "c": 1.0}]}}
         if path == "/v2/stocks/SPY/bars":
-            return {"bars": [{"t": "2026-08-08T19:59:00Z", "o": 770.0, "c": 770.1}]}
+            return {"bars": [{"t": "2026-08-10T19:59:00Z", "o": 770.0, "c": 770.1}]}
         if path == "/v1beta1/options/bars":
-            return {"bars": {params["symbols"]: [{"t": "2026-08-08T19:59:00Z", "c": 1.0}]}}
+            return {"bars": {params["symbols"]: [{"t": "2026-08-10T19:59:00Z", "c": 1.0}]}}
         return {"bars": []}
 
     with patch.object(zwap_client, "_get", side_effect=fake_get):
@@ -55,6 +55,24 @@ def test_download_excludes_end_boundary_bar():
     assert captured["option_strike"] == 773
 
 
+def test_prior_session_uses_eastern_date_and_ignores_utc_weekend_rollover():
+    rows = [
+        {"t": "2025-12-05T20:59:00Z"},  # Friday 15:59 ET, valid RTH.
+        {"t": "2025-12-06T00:30:00Z"},  # Friday 19:30 ET, still Friday.
+        {"t": "2025-12-06T14:30:00Z"},  # Saturday 09:30 ET, not a session.
+    ]
+
+    prior = zwap_client._latest_prior_rth_session(rows, date(2025, 12, 8))
+
+    assert prior is not None
+    prior_date, prior_rows = prior
+    assert prior_date == date(2025, 12, 5)
+    assert [row["t"] for row in prior_rows] == [
+        "2025-12-05T20:59:00Z", "2025-12-06T00:30:00Z"
+    ]
+
+
 if __name__ == "__main__":
     test_download_requests_complete_session()
     test_download_excludes_end_boundary_bar()
+    test_prior_session_uses_eastern_date_and_ignores_utc_weekend_rollover()

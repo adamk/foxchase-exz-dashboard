@@ -130,6 +130,34 @@ def _utc_at(day: date_type, hour: int, minute: int = 0) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _latest_prior_rth_session(rows: list[dict], day: date_type) -> tuple[date_type, list[dict]] | None:
+    """Select the latest prior weekday with an Eastern-time RTH bar.
+
+    Alpaca timestamps are UTC.  Grouping on the timestamp's YYYY-MM-DD prefix
+    can misclassify Friday evening extended-hours bars as a Saturday session.
+    """
+    eastern = ZoneInfo("America/New_York")
+    localized: list[tuple[dict, datetime]] = []
+    rth_dates: set[date_type] = set()
+    for row in rows:
+        try:
+            stamp = str(row.get("t", "")).replace("Z", "+00:00")
+            local = datetime.fromisoformat(stamp).astimezone(eastern)
+        except (TypeError, ValueError):
+            continue
+        session = local.date()
+        if session >= day or session.weekday() >= 5:
+            continue
+        localized.append((row, local))
+        minute = local.hour * 60 + local.minute
+        if 9 * 60 + 30 <= minute < 16 * 60:
+            rth_dates.add(session)
+    if not rth_dates:
+        return None
+    prior_date = max(rth_dates)
+    return prior_date, [row for row, local in localized if local.date() == prior_date]
+
+
 def _get(path: str, params: dict) -> dict:
     key = os.getenv("APCA_API_KEY_ID") or os.getenv("ALPACA_API_KEY") or os.getenv("ALPACA_KEY")
     secret = (os.getenv("APCA_API_SECRET_KEY") or os.getenv("ALPACA_API_SECRET")
@@ -294,12 +322,11 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
         "timeframe": "1Min", "start": prior_start, "end": prior_end,
         "limit": 10000, "feed": "sip", "adjustment": "raw",
     }).get("bars", [])
-    prior_dates = sorted({row.get("t", "")[:10] for row in prior_stock_all
-                          if row.get("t") and row["t"][:10] < day.isoformat()})
-    if not prior_dates:
+    prior_session = _latest_prior_rth_session(prior_stock_all, day)
+    if prior_session is None:
         raise RuntimeError(f"no prior SPY session returned for {day}")
-    prior_date = prior_dates[-1]
-    prior_stock = [row for row in prior_stock_all if row.get("t", "").startswith(prior_date)]
+    prior_date_value, prior_stock = prior_session
+    prior_date = prior_date_value.isoformat()
     prior_options = _get("/v1beta1/options/bars", {
         "symbols": symbol, "timeframe": "1Min",
         "start": _utc_at(date_type.fromisoformat(prior_date), 9),
