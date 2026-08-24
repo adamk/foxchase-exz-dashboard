@@ -50,6 +50,32 @@
       return Number.isFinite(timestamp)?{...point,timestamp:new Date(timestamp).toISOString()}:point;
     });
   }
+  function validCompletedRvolRows(series,nowMs=Date.now()){
+    const byTimestamp=new Map();
+    for(const row of Array.isArray(series)?series:[]){
+      if(row?.rvol===null||row?.rvol===undefined||row?.rvol==='')continue;
+      const timestamp=Date.parse(row?.timestamp),rvol=Number(row?.rvol);
+      if(!Number.isFinite(timestamp)||!Number.isFinite(rvol))continue;
+      // rVol timestamps identify the beginning of a five-minute bucket. A
+      // bucket is eligible only after all five minutes have elapsed.
+      if(timestamp+5*60*1000>nowMs)continue;
+      const key=new Date(timestamp).toISOString();
+      if(!byTimestamp.has(key))byTimestamp.set(key,{...row,timestamp:key,rvol});
+    }
+    return byTimestamp;
+  }
+  function mergeLiveRvolSeries(tradingViewSeries,alpacaSeries,nowMs=Date.now()){
+    const tradingView=validCompletedRvolRows(tradingViewSeries,nowMs);
+    const alpaca=validCompletedRvolRows(alpacaSeries,nowMs);
+    const timestamps=[...new Set([...tradingView.keys(),...alpaca.keys()])].sort();
+    const gapFilled=[];
+    const series=timestamps.map(timestamp=>{
+      if(tradingView.has(timestamp))return {...tradingView.get(timestamp),source:'tradingview'};
+      gapFilled.push(timestamp);
+      return {...alpaca.get(timestamp),source:'alpaca_gap_fill'};
+    });
+    return {series,gapFilled};
+  }
   function chartLayout(series,l,r){
     const step=Math.min(14,(r-l)/Math.max(1,series.length-1));
     const plotRight=Math.min(r,l+step*Math.max(1,series.length-1));
@@ -245,13 +271,17 @@
       const displayedRegime=classifyReturnedLevels(normalizedLevels,result.regime);
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=displayedRegime;
       if(displayedRegime&&displayedRegime!=='UNKNOWN'){cachedRegimes[date]=displayedRegime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
-      // The TradingView indicator is authoritative for the displayed color
-      // sequence. Keep the locally calculated Alpaca series only as a fallback
-      // when the alert feed has not delivered any completed bars yet.
-      let rvolSeries=alpacaRvolSeries;
+      // TradingView remains authoritative at each completed timestamp. A
+      // missed webhook is filled only by the corresponding completed Alpaca
+      // rVol bar; values are never interpolated and valid TradingView bars are
+      // never overwritten.
+      let tradingViewRvolSeries=[];
       if(isLiveDate&&rvolUrl){
-        try{const rvolResponse=await fetch(`${rvolUrl}?date=${encodeURIComponent(date)}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'}),rvolResult=await rvolResponse.json();if(rvolResponse.ok&&Array.isArray(rvolResult.series)&&rvolResult.series.length)rvolSeries=rvolResult.series}catch(_){}
+        try{const rvolResponse=await fetch(`${rvolUrl}?date=${encodeURIComponent(date)}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'}),rvolResult=await rvolResponse.json();if(rvolResponse.ok&&Array.isArray(rvolResult.series))tradingViewRvolSeries=rvolResult.series}catch(_){}
       }
+      const mergedRvol=mergeLiveRvolSeries(tradingViewRvolSeries,alpacaRvolSeries);
+      const rvolSeries=mergedRvol.series;
+      if(mergedRvol.gapFilled.length)console.info('[EXZ rVol] Alpaca gap-filled completed TradingView timestamps',mergedRvol.gapFilled);
       $('rvolSection').hidden=!(isLiveDate&&rvolSeries.length);
       const visualSeries=chartSeries(p);
       // The server can return the identical completed-bar set between polls.
