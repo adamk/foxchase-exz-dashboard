@@ -178,7 +178,7 @@
   }
   function updateLatestZ(){
     if(!renderedSeries){$('latest').textContent='—';return}
-    const point=(crosshairIndex!=null&&$('date').value!==etDate())?renderedSeries[crosshairIndex]:renderedSeries[renderedSeries.length-1];
+    const point=crosshairIndex!=null?renderedSeries[crosshairIndex]:renderedSeries[renderedSeries.length-1];
     $('latest').textContent=point&&point.ex_z!=null?fmt(point.ex_z):'—';
   }
   function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawRvol(renderedSeries,renderedRvol);drawCrosshair(renderedSeries,crosshairIndex);updateLatestZ()}
