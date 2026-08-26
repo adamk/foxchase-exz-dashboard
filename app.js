@@ -38,7 +38,12 @@
     },liveRefreshMs);
   }
   function updateLiveStatus(){const el=$('liveStatus');if(!el)return;const expires=Number(localStorage.getItem(liveExpiryKey)||0),licenseExpires=Number(localStorage.getItem(liveLicenseExpiryKey)||0),token=liveToken(),licenseText=licenseExpires?`valid through ${new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',year:'numeric'}).format(new Date(licenseExpires))}`:'active';el.textContent=token?`Live access ${licenseText} · session active until ${new Date(expires).toLocaleTimeString()}`:licenseExpires?`Live access ${licenseText} · activate a session to use it`:'Not activated'}
-  function setupCanvas(id){const c=$(id),dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);return{x,w,h}};
+  function canvasMetrics(canvas){
+    const rect=canvas.getBoundingClientRect(),w=Math.max(1,Math.round(rect.width)),h=Math.max(1,Math.round(rect.height)),dpr=Math.max(1,window.devicePixelRatio||1);
+    const pixelWidth=Math.max(1,Math.round(w*dpr)),pixelHeight=Math.max(1,Math.round(h*dpr));
+    return {w,h,pixelWidth,pixelHeight,scaleX:pixelWidth/w,scaleY:pixelHeight/h,dpr};
+  }
+  function setupCanvas(id){const c=$(id),m=canvasMetrics(c);if(c.width!==m.pixelWidth)c.width=m.pixelWidth;if(c.height!==m.pixelHeight)c.height=m.pixelHeight;const x=c.getContext('2d');x.setTransform(m.scaleX,0,0,m.scaleY,0,0);x.clearRect(0,0,m.w,m.h);return{x,w:m.w,h:m.h}};
   function chartSeries(series){
     let lastTime=NaN;
     return series.map((point,index)=>{
@@ -84,7 +89,7 @@
     const XPoint=point=>XIndex(indexByTimestamp.get(point.timestamp)??0);
     return {plotRight,XIndex,XPoint};
   }
-  function drawGrid(x,l,t,r,b,lo,hi,labelRight=r,gridRight=r){x.font='10px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(gridRight,y);x.stroke();x.fillStyle='#8b949e';x.textAlign='right';x.fillText(v.toFixed(2),labelRight-4,y+3)}}
+  function drawGrid(x,l,t,r,b,lo,hi,labelRight=r,gridRight=r){x.font='11px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(gridRight,y);x.stroke();x.fillStyle='#a1aab4';x.textAlign='right';x.fillText(v.toFixed(2),labelRight-4,y+3)}}
   function drawTimeAxis(x,p,l,r,b,t){
     // Use quarter-hour labels only. The former mixture of quarter-hour and
     // evenly-spaced labels could place two different timestamps on top of one
@@ -106,7 +111,7 @@
     }
     add(p.length-1,etAxisTime(p[p.length-1].timestamp));
     const entries=[...indices.entries()].sort((a,b)=>a[0]-b[0]);
-    x.font='10px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#8b949e';x.setLineDash([]);
+    x.font='11px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#a1aab4';x.setLineDash([]);
     const labels=new Set();
     let lastLabelRight=-Infinity;
     const minLabelGap=42;
@@ -153,7 +158,7 @@
     // The shared time-axis helper spaces labels by array index. rVol instead
     // occupies absolute five-minute RTH slots, so its labels must use the same
     // clock coordinate or they appear irregularly spaced.
-    x.font='10px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#8b949e';x.textAlign='center';
+    x.font='11px sans-serif';x.strokeStyle='#30363d';x.fillStyle='#a1aab4';x.textAlign='center';
     for(let minute=570;minute<=lastPriceMinute;minute+=30){
       const cx=l+(plotRight-l)*(minute-570)/elapsedMinutes,hour=Math.floor(minute/60),mins=minute%60,displayHour=((hour+11)%12)+1,label=`${displayHour}:${String(mins).padStart(2,'0')} ${hour>=12?'PM':'AM'}`;
       x.beginPath();x.moveTo(cx,b+1);x.lineTo(cx,b+5);x.stroke();x.textAlign=minute===570?'left':'center';x.fillText(label,cx,b+17)
@@ -165,8 +170,8 @@
     if(!series||!Number.isInteger(index)||index<0||index>=series.length)return;
     const timeLabel=etAxisTime(series[index].timestamp);
     [['price',38],['z',48],['rvol',38]].forEach(([id,bottomPad])=>{
-      const canvas=$(id),w=canvas.clientWidth,h=canvas.clientHeight,dpr=devicePixelRatio||1,ctx=canvas.getContext('2d');
-      ctx.setTransform(dpr,0,0,dpr,0,0);const l=10,r=w-10,plotR=Math.max(l+80,r-58),{plotRight}=chartLayout(series,l,plotR),cx=l+(plotRight-l)*index/Math.max(1,series.length-1),plotBottom=h-bottomPad;
+      const canvas=$(id),m=canvasMetrics(canvas),w=m.w,h=m.h,ctx=canvas.getContext('2d');
+      ctx.setTransform(m.scaleX,0,0,m.scaleY,0,0);const l=10,r=w-10,plotR=Math.max(l+80,r-58),{plotRight}=chartLayout(series,l,plotR),cx=l+(plotRight-l)*index/Math.max(1,series.length-1),plotBottom=h-bottomPad;
       ctx.save();ctx.beginPath();ctx.rect(l,10,plotRight-l,h-bottomPad-10);ctx.clip();ctx.strokeStyle='#c9d1d9';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(cx,10);ctx.lineTo(cx,h-bottomPad);ctx.stroke();ctx.restore();
       if(timeLabel){
         ctx.save();ctx.setLineDash([]);ctx.font='600 11px sans-serif';const padX=6,labelWidth=ctx.measureText(timeLabel).width+padX*2,labelHeight=20;
@@ -328,5 +333,17 @@
     $('offset').value=Math.max(-10,Math.min(10,next));
     if($('date').value) load();
   }));
-  refreshSessions();heartbeat();updateLiveStatus();setInterval(heartbeat,30000);addEventListener('resize',()=>{});
+  let resizeFrame=null,lastRenderSize='';
+  function redrawAfterResize(){
+    if(!renderedSeries)return;
+    const sizeSignature=['price','z','rvol'].map(id=>{const c=$(id),m=canvasMetrics(c);return `${id}:${m.w}x${m.h}@${m.dpr}`}).join('|');
+    if(sizeSignature===lastRenderSize)return;
+    lastRenderSize=sizeSignature;
+    redrawWithCrosshair();
+  }
+  function scheduleResizeRedraw(){if(resizeFrame!==null)cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{resizeFrame=null;redrawAfterResize()})}
+  if('ResizeObserver' in window){const chartResizeObserver=new ResizeObserver(scheduleResizeRedraw);['price','z','rvol'].forEach(id=>chartResizeObserver.observe($(id)))}
+  addEventListener('resize',scheduleResizeRedraw);
+  if(window.visualViewport)window.visualViewport.addEventListener('resize',scheduleResizeRedraw);
+  refreshSessions();heartbeat();updateLiveStatus();setInterval(heartbeat,30000);
 })();
