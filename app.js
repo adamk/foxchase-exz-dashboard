@@ -89,7 +89,7 @@
     const XPoint=point=>XIndex(indexByTimestamp.get(point.timestamp)??0);
     return {plotRight,XIndex,XPoint};
   }
-  function drawGrid(x,l,t,r,b,lo,hi,labelRight=r,gridRight=r){x.font='11px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(gridRight,y);x.stroke();x.fillStyle='#a1aab4';x.textAlign='right';x.fillText(v.toFixed(2),labelRight-4,y+3)}}
+  function drawGrid(x,l,t,r,b,lo,hi,labelRight=r,gridRight=r,showLines=true){x.font='11px sans-serif';for(let i=0;i<=4;i++){const y=t+(b-t)*i/4,v=hi-(hi-lo)*i/4;if(showLines){x.strokeStyle='#252b33';x.beginPath();x.moveTo(l,y);x.lineTo(gridRight,y);x.stroke()}x.fillStyle='#a1aab4';x.textAlign='right';x.fillText(v.toFixed(2),labelRight-4,y+3)}}
   function drawTimeAxis(x,p,l,r,b,t){
     // Use quarter-hour labels only. The former mixture of quarter-hour and
     // evenly-spaced labels could place two different timestamps on top of one
@@ -141,7 +141,7 @@
     const scaleMode=$('zScale')?.value==='session'?'session':'morning',morning=p.filter(v=>{const m=etMinutes(v.timestamp);return m>=570&&m<720}),reference=scaleMode==='session'?p:(morning.length>=3?morning:p.slice(0,30)),ref=reference.map(v=>Number(v.ex_z)),
       l=10,r=w-10,t=10,b=h-48,lo=Math.min(-2,...ref)-.1,hi=Math.max(2,...ref)+.1;
     const axisGutter=58,plotR=Math.max(l+80,r-axisGutter),{plotRight,XPoint}=chartLayout(series,l,plotR),X=v=>XPoint(v),Y=v=>b-(b-t)*(v-lo)/(hi-lo),plotY=v=>Math.max(t,Math.min(b,Y(v)));
-    x.fillStyle='#0d1117';x.fillRect(plotR,t,r-plotR,b-t);drawGrid(x,l,t,r,b,lo,hi,r,plotR);x.strokeStyle='#30363d';x.beginPath();x.moveTo(plotR,t);x.lineTo(plotR,b);x.stroke();drawTimeAxis(x,series,l,plotRight,b,t);
+    x.fillStyle='#0d1117';x.fillRect(plotR,t,r-plotR,b-t);drawGrid(x,l,t,r,b,lo,hi,r,plotR,false);x.strokeStyle='#30363d';x.beginPath();x.moveTo(plotR,t);x.lineTo(plotR,b);x.stroke();drawTimeAxis(x,series,l,plotRight,b,t);
     x.setLineDash([4,4]);[-1,0,1].forEach(v=>{x.beginPath();x.strokeStyle=v===0?'#9da7b3':'#58616d';x.lineWidth=v===0?1.5:1;x.moveTo(l,plotY(v));x.lineTo(plotRight,plotY(v));x.stroke()});x.setLineDash([]);x.lineWidth=1;
     x.save();x.beginPath();x.rect(l,t,plotRight-l,b-t);x.clip();x.strokeStyle='#f2cc60';x.lineWidth=2;x.beginPath();
     p.forEach((v,i)=>i?x.lineTo(X(v),plotY(Number(v.ex_z))):x.moveTo(X(v),plotY(Number(v.ex_z))));x.stroke();x.restore();
