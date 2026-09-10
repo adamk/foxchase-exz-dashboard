@@ -55,6 +55,31 @@ def test_download_excludes_end_boundary_bar():
     assert captured["option_strike"] == 773
 
 
+def test_download_excludes_fixed_premarket_first_five_minutes():
+    day = date(2026, 9, 10)
+
+    def fake_get(path, params):
+        if path == "/v2/stocks/SPY/bars" and params["start"].startswith("2026-09-10"):
+            return {"bars": [
+                {"t": "2026-09-10T08:01:00Z", "o": 764.0, "h": 764.60, "l": 763.8, "c": 764.0},
+                {"t": "2026-09-10T08:05:00Z", "o": 763.9, "h": 764.14, "l": 757.69, "c": 763.8},
+                {"t": "2026-09-10T13:30:00Z", "o": 764.0, "h": 764.1, "l": 763.9, "c": 764.0},
+            ]}
+        if path == "/v1beta1/options/bars":
+            symbols = params["symbols"]
+            if "," in symbols:
+                symbols = symbols.split(",")[0]
+            return {"bars": {symbols: [{"t": "2026-09-10T13:30:00Z", "c": 1.0}]}}
+        return {"bars": [{"t": "2026-09-09T19:59:00Z", "o": 770.0, "c": 770.1}]}
+
+    with patch.object(zwap_client, "_get", side_effect=fake_get):
+        payload = zwap_client._download_payload(day, 0, use_cache=False)
+
+    assert [row["t"] for row in payload["spy_bars"]] == [
+        "2026-09-10T08:05:00Z", "2026-09-10T13:30:00Z"
+    ]
+
+
 def test_prior_session_uses_eastern_date_and_ignores_utc_weekend_rollover():
     rows = [
         {"t": "2025-12-05T20:59:00Z"},  # Friday 15:59 ET, valid RTH.

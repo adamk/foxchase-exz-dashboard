@@ -300,6 +300,13 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
     stock = [row for row in stock if stock_start <= row.get("t", "") < stock_end]
     if not stock:
         raise RuntimeError(f"no SPY bars returned for {day}")
+    # Match production regime levels: fixed 04:00 ET premarket anchor, with
+    # its first five minutes excluded (04:00-04:04 ET).  The 04:01 SIP bar on
+    # 2026-09-10 otherwise supplied the non-canonical 764.60 PMH.
+    warmup_end = _utc_at(day, 4, 5)
+    stock = [row for row in stock if row.get("t", "") >= warmup_end]
+    if not stock:
+        raise RuntimeError(f"no SPY bars after premarket warm-up for {day}")
     opening = [row for row in stock if row.get("t", "") >= _utc_at(day, 9, 30)]
     if not opening:
         raise RuntimeError(f"no regular-session opening bar returned for {day}")
