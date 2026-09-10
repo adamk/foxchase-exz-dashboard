@@ -206,7 +206,7 @@ def _rvol_baseline(day: date_type) -> dict[tuple[int, int], tuple[float, int]]:
         "end": _utc_at(day, 9, 29),
         "limit": 10000,
         "feed": "sip",
-        "adjustment": "raw",
+        "adjustment": "all",
         # Alpaca includes extended-hours rows toward the 10,000-row limit.
         # Newest-first guarantees that the selected sessions are recent.
         "sort": "desc",
@@ -292,7 +292,7 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
     stock_start, stock_end = _utc_at(day, 4), _utc_at(day, 16)
     stock = _get("/v2/stocks/SPY/bars", {
         "timeframe": "1Min", "start": stock_start, "end": stock_end,
-        "limit": 10000, "feed": "sip", "adjustment": "raw",
+        "limit": 10000, "feed": "sip", "adjustment": "all",
     }).get("bars", [])
     # Alpaca can include a bar stamped exactly at the requested end time.
     # Keep the interval half-open so 04:00-16:00 contains at most 720 one-minute
@@ -320,7 +320,7 @@ def _download_payload(day: date_type, offset: int, use_cache: bool = True,
     prior_start, prior_end = _utc_at(day - timedelta(days=7), 9), _utc_at(day, 9)
     prior_stock_all = _get("/v2/stocks/SPY/bars", {
         "timeframe": "1Min", "start": prior_start, "end": prior_end,
-        "limit": 10000, "feed": "sip", "adjustment": "raw",
+        "limit": 10000, "feed": "sip", "adjustment": "all",
     }).get("bars", [])
     prior_session = _latest_prior_rth_session(prior_stock_all, day)
     if prior_session is None:
