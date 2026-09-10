@@ -4,14 +4,16 @@
   const status=t=>{$('status').textContent=t};
   const fmt=v=>v==null||Number.isNaN(Number(v))?'—':Number(v).toFixed(2);
   const etDate=()=>{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=k=>parts.find(v=>v.type===k).value;return `${get('year')}-${get('month')}-${get('day')}`};
-  const etTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}).format(d)};
+  const etTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit',second:'2-digit'}).format(d)};
   const etMinutes=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return NaN;const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d);const hour=Number(parts.find(v=>v.type==='hour')?.value),minute=Number(parts.find(v=>v.type==='minute')?.value);return Number.isFinite(hour)&&Number.isFinite(minute)?hour*60+minute:NaN};
   const etAxisTime=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '';return new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}).format(d)};
   const sessionId=(()=>{const key='foxchase_zwap_session';let v=localStorage.getItem(key);if(!v){v=crypto.randomUUID().replaceAll('-','');localStorage.setItem(key,v)}return v})();
   const activationUrl=cfg.activationUrl||'https://exz-api.foxchasetrading.com/api/public/exz/activate';
   const liveComputeUrl=cfg.liveComputeUrl||'https://exz-api.foxchasetrading.com/api/public/exz/live';
   const rvolUrl=cfg.rvolUrl||'https://exz-api.foxchasetrading.com/api/public/exz/rvol';
-  const liveRefreshMs=Math.max(15000,Number(cfg.liveRefreshMs||30000));
+  const liveQuoteUrl=cfg.liveQuoteUrl||(cfg.connectorUrl||'').replace(/\/api\/session$/,'/api/live/quote');
+  const liveRefreshMs=Math.max(5000,Number(cfg.liveRefreshMs||5000));
+  const liveQuoteRefreshMs=Math.max(500,Number(cfg.liveQuoteRefreshMs||1000));
   const liveTokenKey='foxchase_exz_live_token';
   const liveExpiryKey='foxchase_exz_live_expires';
   const liveLicenseExpiryKey='foxchase_exz_license_expires';
@@ -20,6 +22,7 @@
   try{cachedRegimes=JSON.parse(localStorage.getItem(regimeCacheKey)||'{}')||{}}catch(_){cachedRegimes={}}
   let sessions=[];
   let liveRefreshTimer=null;
+  let liveQuoteTimer=null;
   let loadInFlight=false;
   let renderedSeries=null;
   let renderedRvol=null;
@@ -29,9 +32,29 @@
   const sessionsUrl=cfg.sessionsUrl||(cfg.connectorUrl||'').replace(/\/api\/session$/,'/api/sessions');
   function liveToken(){const token=localStorage.getItem(liveTokenKey),expires=Number(localStorage.getItem(liveExpiryKey)||0);if(!token||!expires||Date.now()>=expires){localStorage.removeItem(liveTokenKey);localStorage.removeItem(liveExpiryKey);return ''}return token}
   function stopLiveRefresh(){if(liveRefreshTimer!==null){clearInterval(liveRefreshTimer);liveRefreshTimer=null}}
+  function stopLiveQuote(){if(liveQuoteTimer!==null){clearInterval(liveQuoteTimer);liveQuoteTimer=null}}
+  async function refreshLiveQuote(){
+    if(!liveQuoteUrl||$('date').value!==etDate()||!liveToken()){stopLiveQuote();return}
+    const liveQuote=$('liveQuote'),liveQuoteMeta=$('liveQuoteMeta');
+    if(!liveQuote||!liveQuoteMeta){stopLiveQuote();return}
+    try{
+      const response=await fetch(liveQuoteUrl,{cache:'no-store'}),result=await response.json();
+      if(!response.ok)throw new Error(result.error||'quote unavailable');
+      const quote=result.quote,stream=result.stream_status||{},stale=stream.stale?.opra||!stream.connected?.opra;
+      if(!quote||quote.midpoint===null||quote.midpoint===undefined){$('liveQuote').textContent=stale?'STALE':'—';$('liveQuoteMeta').textContent='Waiting for an OPRA quote';return}
+      $('liveQuote').textContent=stale?'STALE':fmt(quote.midpoint);
+      $('liveQuoteMeta').textContent=`Bid ${fmt(quote.bid)} · Ask ${fmt(quote.ask)} · ${etTime(quote.provider_timestamp)} ET${stale?' · stream stale':''}`;
+    }catch(_){$('liveQuote').textContent='STALE';$('liveQuoteMeta').textContent='Quote stream unavailable'}
+  }
+  function scheduleLiveQuote(){
+    if($('date').value!==etDate()||!liveToken()||etMinutes(Date.now())>=16*60){stopLiveQuote();return}
+    if(liveQuoteTimer!==null)return;
+    refreshLiveQuote();
+    liveQuoteTimer=setInterval(refreshLiveQuote,liveQuoteRefreshMs);
+  }
   function scheduleLiveRefresh(){
-    stopLiveRefresh();
-    if($('date').value!==etDate()||!liveToken()||etMinutes(Date.now())>=16*60)return;
+    if($('date').value!==etDate()||!liveToken()||etMinutes(Date.now())>=16*60){stopLiveRefresh();return}
+    if(liveRefreshTimer!==null)return;
     liveRefreshTimer=setInterval(()=>{
       if($('date').value!==etDate()||!liveToken()||etMinutes(Date.now())>=16*60){stopLiveRefresh();return}
       load({automatic:true});
@@ -192,20 +215,6 @@
     crosshairIndex=Math.max(0,Math.min(renderedSeries.length-1,Math.round((x-l)/Math.max(1,plotRight-l)*(renderedSeries.length-1))));redrawWithCrosshair();
   }
   function sessionRegime(s){return (s.regime==='UNKNOWN'&&cachedRegimes[s.date])||s.regime||'UNKNOWN'}
-  function classifyReturnedLevels(levels,fallback){
-    if(!levels)return fallback||'UNKNOWN';
-    const value=(...names)=>{for(const name of names){if(levels[name]!=null)return Number(levels[name])}return NaN};
-    const pmh=value('PMH','pmh','premarket_high','pre_market_high'),pml=value('PML','pml','premarket_low','pre_market_low'),ydh=value('YDH','ydh','yesterday_high','prior_high'),ydl=value('YDL','ydl','yesterday_low','prior_low');
-    if(![pmh,pml,ydh,ydl].every(Number.isFinite))return fallback||'UNKNOWN';
-    const close=(a,b)=>Math.abs(a-b)<=0.01;
-    if(close(pml,ydl)||close(pmh,ydh)||close(pml,ydh)||close(pmh,ydl))return 'R1';
-    if(pml<ydl&&pmh>ydh)return 'R6';
-    if(pml>=ydh)return 'R2';
-    if(pmh<=ydl)return 'R3';
-    if(pmh>ydh&&pml>=ydl&&pml<ydh)return 'R4';
-    if(pml<ydl&&pmh<=ydh&&pmh>ydl)return 'R5';
-    return 'R1';
-  }
   function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');const liveSelected=current===etDate();const placeholder=liveSelected?'Today (live — not cached)':'Select a cached session';picker.innerHTML=`<option value="">${placeholder}</option>`+visible.map(s=>`<option value="${s.date}">${s.date} · ${sessionRegime(s)}</option>`).join('');picker.value=visible.some(s=>s.date===current)?current:''}
   async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){sessions=result.sessions;renderSessions()}}catch(_) {}}
   async function heartbeat(){if(!cfg.presenceUrl)return;try{await fetch(cfg.presenceUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})})}catch(_){}}
@@ -220,7 +229,7 @@
     // page to jump vertically every 30 seconds, which looked like a reload.
     // Historical sessions never show rVol, so hide it only when changing to
     // that mode.
-    if(!isLiveDate){$('rvolSection').hidden=true;renderedRvol=[];}
+    if(!isLiveDate){$('rvolSection').hidden=true;renderedRvol=[];$('exzSnapshotMeta').textContent='Historical session';stopLiveQuote();}
     if(date>etDate()){stopLiveRefresh();status('Live access is limited to the current trading day.');return}
     const token=isLiveDate?liveToken():'';
     if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active EXZ Live entitlement from Foxchase Trading.');return}
@@ -237,17 +246,20 @@
       status('Computing the study…');
       const headers={'Content-Type':'application/json','X-ZWAP-Session':sessionId};
       if(isLiveDate)headers.Authorization=`Bearer ${token}`;else if(cfg.computeToken)headers.Authorization=`Bearer ${cfg.computeToken}`;
-      const {rvol_series:alpacaRvolSeries=[],...computePayload}=payload;
+      const {rvol_series:alpacaRvolSeries=[],stream_status:streamStatus={},snapshot_timestamp:snapshotTimestamp,...computePayload}=payload;
       const response=await fetch(computeUrl,{method:'POST',headers,body:JSON.stringify(computePayload)});
       const result=await response.json();
       if(!response.ok){
-        if(isLiveDate&&response.status===401){localStorage.removeItem(liveTokenKey);localStorage.removeItem(liveExpiryKey);updateLiveStatus();stopLiveRefresh()}
+        if(isLiveDate&&response.status===401){localStorage.removeItem(liveTokenKey);localStorage.removeItem(liveExpiryKey);updateLiveStatus();stopLiveRefresh();stopLiveQuote()}
         throw new Error(result.error||'calculation failed')
       }
       const p=result.series||[],z=p.filter(v=>v.ex_z!=null);
       const returnedLevels=result.levels||result.key_levels||result.keyLevels||result.level_summary;
       const normalizedLevels=returnedLevels?{...returnedLevels}:null;
-      const displayedRegime=classifyReturnedLevels(normalizedLevels,result.regime);
+      // The calculation service is authoritative for regime classification.
+      // Do not reclassify its levels in the browser: that creates a second,
+      // drift-prone regime definition and can override the production result.
+      const displayedRegime=result.regime||'UNKNOWN';
       $('contract').textContent=result.option_symbol||'—';$('regime').textContent=displayedRegime;
       if(displayedRegime&&displayedRegime!=='UNKNOWN'){cachedRegimes[date]=displayedRegime;localStorage.setItem(regimeCacheKey,JSON.stringify(cachedRegimes));renderSessions()}
       // TradingView remains authoritative at each completed timestamp. A
@@ -269,6 +281,7 @@
       const signature=JSON.stringify({contract:result.option_symbol||'',series:visualSeries,rvol:isLiveDate?rvolSeries:[]});
       const visualDataChanged=signature!==renderedDataSignature;
       $('latest').textContent=z.length?fmt(z[z.length-1].ex_z):'—';
+      $('exzSnapshotMeta').textContent=`EXZ snapshot: ${etTime(snapshotTimestamp||Date.now())} ET`;
       if(visualDataChanged){
         renderedDataSignature=signature;
         renderedSeries=visualSeries;
@@ -280,8 +293,10 @@
       }
       const levelText=normalizedLevels?` · PMH ${normalizedLevels.PMH??normalizedLevels.pmh??'—'} / PML ${normalizedLevels.PML??normalizedLevels.pml??'—'} / YDH ${normalizedLevels.YDH??normalizedLevels.ydh??'—'} / YDL ${normalizedLevels.YDL??normalizedLevels.ydl??'—'}`:'';
       const marketClosed=isLiveDate&&etMinutes(Date.now())>=16*60;
-      status(isLiveDate?`Updated ${result.option_symbol||'session'}${levelText} · ${marketClosed?'regular session closed; refresh stopped.':`live auto-refresh every ${Math.round(liveRefreshMs/1000)}s.`}`:`Loaded ${result.option_symbol||'session'}${levelText} · Study ready.`);
-      if(isLiveDate)scheduleLiveRefresh();
+      const streamStale=Boolean(streamStatus.stale?.sip||streamStatus.stale?.opra);
+      const liveMode=streamStale?'REST recovery snapshot; stream reconnecting':streamStatus.transition_pending?'REST initialization; stream warming':result.incremental?.active?'incremental stream':'REST fallback';
+      status(isLiveDate?`Updated ${result.option_symbol||'session'}${levelText} · ${marketClosed?'regular session closed; refresh stopped.':`${liveMode}; snapshot every ${Math.round(liveRefreshMs/1000)}s.`}`:`Loaded ${result.option_symbol||'session'}${levelText} · Study ready.`);
+      if(isLiveDate){scheduleLiveRefresh();scheduleLiveQuote()}
       refreshSessions();
     }catch(e){
       // A failed live refresh previously left the last successful regime in
@@ -292,7 +307,7 @@
     }finally{$('load').disabled=false;loadInFlight=false}
   }
   $('date').max=etDate();
-  $('date').addEventListener('change',()=>{$('offset').value=0;renderSessions()});
+  $('date').addEventListener('change',()=>{$('offset').value=0;stopLiveRefresh();stopLiveQuote();renderSessions()});
   ['price','z','rvol'].forEach(id=>{const canvas=$(id);canvas.addEventListener('pointermove',updateCrosshair);canvas.addEventListener('pointerleave',()=>{crosshairIndex=null;redrawWithCrosshair()})});
   $('regimeFilter').addEventListener('change',renderSessions);
   if($('zScale')){
