@@ -11,6 +11,15 @@ CONNECTOR_PORT="${ZWAP_CONNECTOR_PORT:-8789}"
 WEB_PORT=8791
 CONNECTOR_LOG="${TMPDIR:-/tmp}/foxchase-exz-connector.log"
 WEB_LOG="${TMPDIR:-/tmp}/foxchase-exz-web.log"
+PYTHON_BIN="${ZWAP_PYTHON_BIN:-}"
+
+if [[ -z "$PYTHON_BIN" && -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
+  PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
+fi
+if [[ -z "$PYTHON_BIN" && -x "$SCRIPT_DIR/../zwap_live_dashboard/.venv/bin/python" ]]; then
+  PYTHON_BIN="$SCRIPT_DIR/../zwap_live_dashboard/.venv/bin/python"
+fi
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 cd "$SCRIPT_DIR"
 
@@ -94,6 +103,10 @@ if [[ ! -f config.js ]]; then
   exit 1
 fi
 
+if ! "$PYTHON_BIN" -c 'import websockets, msgpack' >/dev/null 2>&1; then
+  print -u2 "Warning: EXZ Live requires websockets and msgpack; historical mode remains available."
+fi
+
 if curl -fsS "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 \
    && curl -fsS "http://127.0.0.1:${CONNECTOR_PORT}/healthz" >/dev/null 2>&1; then
   print "Foxchase EXZ is already running at http://127.0.0.1:${WEB_PORT}/"
@@ -141,12 +154,12 @@ else
     print "Port ${CONNECTOR_PORT} is already occupied; leaving the existing connector untouched."
     CONNECTOR_PID=""
   else
-    python3 local_connector.py >"$CONNECTOR_LOG" 2>&1 &
+    "$PYTHON_BIN" local_connector.py >"$CONNECTOR_LOG" 2>&1 &
     CONNECTOR_PID=$!
   fi
 fi
 
-python3 -m http.server "$WEB_PORT" --bind 127.0.0.1 >"$WEB_LOG" 2>&1 &
+"$PYTHON_BIN" -m http.server "$WEB_PORT" --bind 127.0.0.1 >"$WEB_LOG" 2>&1 &
 WEB_PID=$!
 
 for _ in {1..40}; do

@@ -18,11 +18,19 @@ import re
 from zwap_client import _download_payload
 from datetime import date as date_type, datetime
 from zoneinfo import ZoneInfo
+from live_runtime import LiveRuntime
 
 
 _cache_lock = threading.Lock()
 _payload_cache: dict[tuple[str, int, bool], dict] = {}
 _date_pattern = re.compile(r"^data_(\d{4}-\d{2}-\d{2})_meta\.json$")
+
+
+def _live_payload_loader(day: date_type, offset: int) -> dict:
+    return _download_payload(day, offset, use_cache=False, include_rvol=False)
+
+
+_live_runtime = LiveRuntime(_live_payload_loader)
 
 
 def _cached_sessions() -> list[dict]:
@@ -54,10 +62,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
         if parsed.path == "/healthz":
-            self._json({"ok": True, "service": "zwap-local-data-connector"})
+            self._json({
+                "ok": True,
+                "service": "zwap-local-data-connector",
+                "live": _live_runtime.status(),
+            })
             return
         if parsed.path == "/api/sessions":
             self._json({"sessions": _cached_sessions()})
+            return
+        if parsed.path == "/api/live/status":
+            self._json(_live_runtime.status())
+            return
+        if parsed.path == "/api/live/quote":
+            try:
+                self._json(_live_runtime.quote())
+            except Exception as exc:
+                self._json({"error": str(exc)[:240]}, status=503)
             return
         if parsed.path != "/api/session":
             self.send_error(404)
@@ -72,15 +93,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             offset = max(-10, min(10, int(query.get("offset", ["1"])[0])))
             cache_key = (session_date.isoformat(), offset, live)
-            payload = None
-            if not live:
+            if live:
+                payload = _live_runtime.snapshot(session_date, offset)
+            else:
                 with _cache_lock:
                     payload = _payload_cache.get(cache_key)
-            if payload is None:
-                payload = _download_payload(
-                    session_date, offset, use_cache=not live, include_rvol=live
-                )
-                if not live:
+                if payload is None:
+                    payload = _download_payload(session_date, offset, use_cache=True)
                     with _cache_lock:
                         _payload_cache[cache_key] = payload
             self._json(payload)
@@ -111,6 +130,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        _live_runtime.stop()
         server.server_close()
 
 

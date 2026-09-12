@@ -9,7 +9,7 @@ series. The relay forwards the request to the private calculation engine.
 
 ## Requirements
 
-- Python 3.10 or newer (the connector uses only the standard library).
+- Python 3.10 or newer, plus `websockets` and `msgpack` for live SIP/OPRA.
 - Your own Alpaca market-data API credentials.
 - Alpaca Algo Trader Plus for archived historical option sessions. Alpaca's
   free Basic plan is limited to recent data and is not sufficient for this
@@ -25,6 +25,7 @@ series. The relay forwards the request to the private calculation engine.
 git clone https://github.com/adamk/foxchase-exz-dashboard.git
 cd foxchase-exz-dashboard
 python3 --version
+python3 -m pip install websockets msgpack
 cp config.example.js config.js
 ```
 
@@ -86,9 +87,11 @@ the key or code for a short-lived entitlement token and then uses the private
 Foxchase service for same-day calculations. Do not add private live
 configuration or tokens to this public repository.
 
-After the current-day session is loaded, the dashboard refreshes it
-automatically every 30 seconds. Historical sessions remain static and are
-loaded only when selected.
+After the current-day session is loaded, SIP/OPRA events update a private
+incremental calculation session. The dashboard requests a stabilized EXZ
+snapshot about every five seconds and displays the selected option quote about
+once per second. REST remains bounded to initialization and stream-gap repair.
+Historical sessions remain static and are loaded only when selected.
 
 The SPY five-minute rVol panel is part of EXZ Live and is intentionally hidden
 from the free historical dashboard. Its displayed live sequence uses normalized
@@ -135,7 +138,9 @@ historical view. Live-session access is a separate permissioned service.
 ## Files and security
 
 - `index.html` and `app.js`: dashboard UI and chart rendering.
-- `local_connector.py` and `zwap_client.py`: local, user-owned Alpaca adapter.
+- `local_connector.py`, `live_runtime.py`, `live_stream_adapter.py`,
+  `alpaca_live_stream.py`, and `zwap_client.py`: local, user-owned Alpaca
+  adapter. Quote ticks never populate EXZ bars.
 - `config.example.js`: safe configuration template.
 - `config.js`: local configuration that may contain a live token; never commit
   or publish it.

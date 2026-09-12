@@ -6,9 +6,11 @@ window.ZWAP_CONFIG = {
   computeUrl: 'https://exz-api.foxchasetrading.com/api/public/exz/historical',
   activationUrl: 'https://exz-api.foxchasetrading.com/api/public/exz/activate',
   liveComputeUrl: 'https://exz-api.foxchasetrading.com/api/public/exz/live',
-  // Current-day chart refresh cadence. One-minute bars are updated every 30s
-  // by default; never used for historical sessions.
-  liveRefreshMs: 30000,
+  liveQuoteUrl: 'http://127.0.0.1:8789/api/live/quote',
+  // Stream-backed EXZ snapshots and the independent quote/midpoint display.
+  // Neither cadence is used for historical sessions.
+  liveRefreshMs: 5000,
+  liveQuoteRefreshMs: 1000,
   computeToken: '',
   presenceUrl: 'https://exz-api.foxchasetrading.com/api/public/exz-presence'
 };
