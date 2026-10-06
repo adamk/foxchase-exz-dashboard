@@ -70,6 +70,38 @@ Historical requests are accepted only for completed sessions, use the bars
 downloaded with your own Alpaca credentials, and are rate-limited per anonymous
 browser session.
 
+### Historical date and opening ATM
+
+The reference is the selected session's **09:30 Eastern one-minute opening
+price**, using unadjusted (`raw`) SPY bars. Current and prior historical SPY
+inputs use the same nominal price basis as the option strikes. Today's live
+transport retains its existing adjustment convention and stream behavior.
+
+The existing same-session SPY CALL/$1 strike neighborhood is checked against
+actual historical option-bar responses. ATM is deterministic, including an
+upward choice at an exact half-dollar tie. Offsets remain dollar offsets from
+that opening ATM. A missing nearest/requested contract, missing exact opening
+bar, malformed symbol or incomplete response fails explicitly; no current
+price, later bar or different strike is substituted. The reported available
+range is the queried neighborhood with data, not an exhaustive chain listing.
+
+GET-only checks on October 5, 2026 found the earliest verified SPY options
+coverage at **January 18, 2024**: January 17 and sampled 2023 sessions returned
+no bars, while January 18 same-day and continuing standard contracts returned
+data. The date picker uses this observed boundary. Individual contracts/dates
+after it can still be missing. Older dates and gaps show an unavailable-data
+message and clear the prior historical result. Existing calculation-engine
+warm-up behavior remains unchanged when prior option history is empty.
+
+Unversioned disk ATM caches are bypassed for historical loading because they
+do not prove their price adjustment/reference. Corrected in-memory snapshots
+are reusable only when their reference, date, offset and contract agree.
+
+The browser console and CLI stderr emit `[EXZ Historical ATM]` with the session,
+reference timestamp/price, expiration, available strikes, selection and spot
+distance. This diagnostic is excluded from calculation requests. Alpaca keys
+remain local, and the EXZ calculation engine/formula is unchanged.
+
 ## Live/current-day access
 
 Live/current-day calculations are a separate paid Foxchase Trading service.

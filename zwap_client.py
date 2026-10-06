@@ -15,6 +15,8 @@ import argparse
 import json
 import math
 import os
+import re
+import sys
 import uuid
 from functools import lru_cache
 from datetime import date as date_type, datetime, time as time_type, timedelta, timezone
@@ -27,6 +29,10 @@ from zoneinfo import ZoneInfo
 
 RVOL_LOOKBACK_SESSIONS = 10
 RVOL_INTERVAL_MINUTES = 5
+# Observed with this source's dated option-bar API: Jan 17 returned no bars;
+# Jan 18 returned both same-day and continuing standard-contract bars.
+# This is an observed coverage boundary, not a promise of gap-free sessions.
+HISTORICAL_OPTIONS_START = date_type(2024, 1, 18)
 RVOL_COLORS = (
     (2.2, "purple"),
     (1.8, "red"),
@@ -280,8 +286,153 @@ def _rvol_series(day: date_type, current_stock: list[dict]) -> list[dict]:
     return result
 
 
+class HistoricalDataError(RuntimeError):
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _historical_bars(path: str, params: dict):
+    """Complete historical pages without changing the live REST path."""
+    stock = path.startswith("/v2/stocks/")
+    result = [] if stock else {}
+    seen = set()
+    query = {**params, "sort": "asc"}
+    for _ in range(100):
+        response = _get(path, query)
+        rows = response.get("bars") if isinstance(response, dict) else None
+        if stock:
+            if not isinstance(rows, list):
+                raise HistoricalDataError("Historical SPY bars are malformed.", "historical_reference_unavailable")
+            result.extend(rows)
+        else:
+            if not isinstance(rows, dict) or any(not isinstance(values, list) for values in rows.values()):
+                raise HistoricalDataError("Historical option data is malformed.", "historical_option_chain_invalid")
+            for symbol, values in rows.items():
+                result.setdefault(symbol, []).extend(values)
+        token = response.get("next_page_token")
+        if not token:
+            return result
+        if not isinstance(token, str) or token in seen:
+            raise HistoricalDataError("Historical data pagination is incomplete; no session was selected.", "historical_data_incomplete")
+        seen.add(token)
+        query = {**params, "sort": "asc", "page_token": token}
+    raise HistoricalDataError("Historical data pagination exceeded its safety limit.", "historical_data_incomplete")
+
+
+def _historical_timestamp(row: dict) -> datetime:
+    try:
+        stamp = row["t"]
+        if not isinstance(stamp, str) or not re.search(r"(?:Z|[+-]\d{2}:\d{2})$", stamp):
+            raise ValueError("timezone missing")
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HistoricalDataError("Historical bar timestamp is invalid.", "historical_data_incomplete") from exc
+
+
+def _historical_session_rows(rows: list, start: str, end: str) -> list:
+    first = datetime.fromisoformat(start.replace("Z", "+00:00"))
+    last = datetime.fromisoformat(end.replace("Z", "+00:00"))
+    return sorted((row for row in rows if first <= _historical_timestamp(row) < last), key=_historical_timestamp)
+
+
+def _historical_reference(stock: list, day: date_type) -> tuple[str, float]:
+    timestamp = _utc_at(day, 9, 30)
+    expected = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    opening = [row for row in stock if _historical_timestamp(row) == expected]
+    try:
+        if len(opening) != 1 or isinstance(opening[0].get("o"), bool):
+            raise ValueError("exact opening missing or ambiguous")
+        spot = float(opening[0]["o"])
+        if not math.isfinite(spot) or spot <= 0:
+            raise ValueError("invalid opening price")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HistoricalDataError(f"Historical SPY opening price is unavailable at {timestamp} (09:30 ET); no later/current price is substituted.", "historical_reference_unavailable") from exc
+    return timestamp, spot
+
+
+def _historical_contracts(options: dict, day: date_type, start: str, end: str) -> list:
+    """Listed-contract evidence comes from the existing historical bars API."""
+    available = []
+    for symbol, rows in options.items():
+        match = re.fullmatch(r"SPY(\d{6})C(\d{8})", symbol)
+        if not match or match.group(1) != day.strftime("%y%m%d"):
+            raise HistoricalDataError("Historical option response has an invalid SPY CALL symbol or expiration.", "historical_option_chain_invalid")
+        strike = int(match.group(2)) / 1000
+        if strike <= 0:
+            raise HistoricalDataError("Historical option strike is invalid.", "historical_option_chain_invalid")
+        selected_rows = _historical_session_rows(rows, start, end)
+        if selected_rows:
+            for row in selected_rows:
+                try:
+                    price = float(row["c"])
+                    if not math.isfinite(price) or price < 0:
+                        raise ValueError("invalid close")
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise HistoricalDataError("Historical option bars have invalid prices.", "historical_option_chain_invalid") from exc
+            available.append((strike, symbol, selected_rows))
+    return sorted(available, key=lambda item: (item[0], item[1]))
+
+
+def _download_historical_payload(day: date_type, offset: int, include_rvol: bool) -> dict:
+    if day < HISTORICAL_OPTIONS_START:
+        raise HistoricalDataError(f"Historical options data is unavailable for this date. Earliest verified Alpaca coverage: {HISTORICAL_OPTIONS_START}.", "historical_options_unavailable")
+    start, end = _utc_at(day, 4), _utc_at(day, 16)
+    stock = _historical_bars("/v2/stocks/SPY/bars", {
+        "timeframe": "1Min", "start": start, "end": end,
+        "limit": 10000, "feed": "sip", "adjustment": "raw",
+    })
+    stock = _historical_session_rows(stock, _utc_at(day, 4, 5), end)
+    reference_timestamp, spot = _historical_reference(stock, day)
+    nominal_atm = math.floor(spot + .5)
+    target = nominal_atm + int(offset)
+    # Preserve the existing SPY $1 neighborhood and same-session expiration.
+    # Unlike the live path, missing nearest/requested data never substitutes
+    # another strike. Unproven legacy disk ATM metadata is not consumed.
+    symbols = [_occ_symbol(day, target + step) for step in (0, 1, -1, 2, -2)]
+    options = _historical_bars("/v1beta1/options/bars", {
+        "symbols": ",".join(symbols), "timeframe": "1Min",
+        "start": start, "end": end, "limit": 10000,
+    })
+    available = _historical_contracts(options, day, start, end)
+    reference = spot if int(offset) == 0 else target
+    chosen = min(available, key=lambda item: (abs(item[0] - reference), -item[0], item[1])) if available else None
+    if chosen is None or chosen[0] != target:
+        raise HistoricalDataError(f"Historical options data is unavailable for the nearest/requested {target}C on {day}; no different strike is substituted.", "historical_options_unavailable")
+    strike, symbol, option_rows = chosen
+    prior_stock_all = _historical_bars("/v2/stocks/SPY/bars", {
+        "timeframe": "1Min", "start": _utc_at(day - timedelta(days=7), 9),
+        "end": _utc_at(day, 9), "limit": 10000, "feed": "sip", "adjustment": "raw",
+    })
+    prior = _latest_prior_rth_session(prior_stock_all, day)
+    if prior is None:
+        raise HistoricalDataError(f"Historical prior SPY session is unavailable for {day}.", "historical_reference_unavailable")
+    prior_day, prior_stock = prior
+    prior_options = _historical_bars("/v1beta1/options/bars", {
+        "symbols": symbol, "timeframe": "1Min", "start": _utc_at(prior_day, 9),
+        "end": _utc_at(prior_day, 16), "limit": 10000,
+    }).get(symbol, [])
+    diagnostic = {"schema_version": 1, "historical_date": day.isoformat(),
+        "reference_timestamp": reference_timestamp, "reference_price": spot,
+        "price_adjustment": "raw", "expiration": day.isoformat(),
+        "available_strike_range": [available[0][0], available[-1][0]],
+        "available_strikes": [item[0] for item in available],
+        "chain_scope": "queried historical-bar neighborhood",
+        "atm_strike": nominal_atm, "selected_strike": strike,
+        "distance_from_spot": round(abs(spot - strike), 8), "offset": int(offset)}
+    result = {"session_date": day.isoformat(), "option_symbol": symbol,
+        "option_strike": int(strike), "spy_bars": stock, "option_bars": option_rows,
+        "previous_spy_bars": prior_stock, "previous_option_bars": prior_options,
+        "historical_atm": diagnostic}
+    if include_rvol:
+        result["rvol_series"] = _rvol_series(day, stock)
+    return result
+
+
 def _download_payload(day: date_type, offset: int, use_cache: bool = True,
-                      include_rvol: bool = False) -> dict:
+                      include_rvol: bool = False, historical: bool = False) -> dict:
+    if historical:
+        return _download_historical_payload(day, offset, include_rvol)
     if use_cache:
         cached = _cached_payload(day, offset)
         if cached is not None:
@@ -368,7 +519,12 @@ def main() -> int:
     public_historical = "/api/public/exz/historical" in args.api_url
     if not public_historical and not args.token:
         raise SystemExit("set --token or ZWAP_HISTORICAL_TOKEN for a private endpoint")
-    payload = _download_payload(date_type.fromisoformat(args.date), max(-10, min(10, args.offset)))
+    requested_day = date_type.fromisoformat(args.date)
+    payload = _download_payload(requested_day, max(-10, min(10, args.offset)),
+        historical=public_historical or requested_day < datetime.now(ZoneInfo("America/New_York")).date())
+    diagnostic = payload.pop("historical_atm", None)
+    if diagnostic:
+        print("[EXZ Historical ATM] " + json.dumps(diagnostic), file=sys.stderr)
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Content-Type": "application/json",

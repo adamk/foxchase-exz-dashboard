@@ -15,7 +15,8 @@ from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 import re
 
-from zwap_client import _download_payload
+from zwap_client import (_download_payload, _historical_reference, _occ_symbol,
+                         HistoricalDataError, HISTORICAL_OPTIONS_START)
 from datetime import date as date_type, datetime
 from zoneinfo import ZoneInfo
 from live_runtime import LiveRuntime
@@ -58,6 +59,31 @@ def _cached_sessions() -> list[dict]:
     return [{"date": day, "regime": sessions[day]} for day in sorted(sessions)]
 
 
+def _valid_historical_cache(payload, day: date_type, offset: int) -> bool:
+    """Reject legacy/mixed-date packets instead of trusting cached ATM labels."""
+    if not isinstance(payload, dict) or day < HISTORICAL_OPTIONS_START:
+        return False
+    diagnostic = payload.get("historical_atm")
+    if not isinstance(diagnostic, dict) or diagnostic.get("schema_version") != 1:
+        return False
+    try:
+        stamp, price = _historical_reference(payload.get("spy_bars", []), day)
+        atm = int(price + .5)
+        target = atm + offset
+        return (payload.get("session_date") == day.isoformat()
+                and diagnostic.get("historical_date") == day.isoformat()
+                and diagnostic.get("price_adjustment") == "raw"
+                and diagnostic.get("reference_timestamp") == stamp
+                and diagnostic.get("reference_price") == price
+                and diagnostic.get("offset") == offset
+                and diagnostic.get("atm_strike") == atm
+                and diagnostic.get("selected_strike") == target
+                and payload.get("option_strike") == target
+                and payload.get("option_symbol") == _occ_symbol(day, target))
+    except (HistoricalDataError, TypeError, ValueError):
+        return False
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
@@ -69,7 +95,7 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
         if parsed.path == "/api/sessions":
-            self._json({"sessions": _cached_sessions()})
+            self._json({"sessions": _cached_sessions(), "historical_options_start": HISTORICAL_OPTIONS_START.isoformat()})
             return
         if parsed.path == "/api/live/status":
             self._json(_live_runtime.status())
@@ -91,6 +117,9 @@ class Handler(BaseHTTPRequestHandler):
             if session_date > today or (session_date == today and not live):
                 self._json({"error": "current-day and future sessions require live access"}, status=402)
                 return
+            # A historical date never selects the current-day stream, even
+            # when a caller supplies a stale live query flag.
+            live = live and session_date == today
             offset = max(-10, min(10, int(query.get("offset", ["1"])[0])))
             cache_key = (session_date.isoformat(), offset, live)
             if live:
@@ -98,11 +127,16 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 with _cache_lock:
                     payload = _payload_cache.get(cache_key)
+                if payload is not None and not _valid_historical_cache(payload, session_date, offset):
+                    payload = None
                 if payload is None:
-                    payload = _download_payload(session_date, offset, use_cache=True)
+                    payload = _download_payload(session_date, offset, use_cache=True, historical=True)
                     with _cache_lock:
                         _payload_cache[cache_key] = payload
             self._json(payload)
+        except HistoricalDataError as exc:
+            self._json({"error": str(exc), "code": exc.code,
+                "historical_options_start": HISTORICAL_OPTIONS_START.isoformat()}, status=422)
         except Exception as exc:  # local diagnostics only; no credentials included
             self._json({"error": str(exc)[:240]}, status=502)
 

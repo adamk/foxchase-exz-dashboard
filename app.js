@@ -21,6 +21,7 @@
   let cachedRegimes={};
   try{cachedRegimes=JSON.parse(localStorage.getItem(regimeCacheKey)||'{}')||{}}catch(_){cachedRegimes={}}
   let sessions=[];
+  let historicalOptionsStart='';
   let liveRefreshTimer=null;
   let liveQuoteTimer=null;
   let loadInFlight=false;
@@ -209,14 +210,26 @@
     const point=crosshairIndex!=null?renderedSeries[crosshairIndex]:renderedSeries[renderedSeries.length-1];
     $('latest').textContent=point&&point.ex_z!=null?fmt(point.ex_z):'—';
   }
+  function clearHistoricalResult(){
+    renderedSeries=null;renderedRvol=[];renderedDataSignature=null;crosshairIndex=null;
+    ['contract','regime','latest'].forEach(id=>{$(id).textContent='—'});
+    ['price','z','rvol'].forEach(setupCanvas);
+    $('exzSnapshotMeta').textContent='Historical session unavailable';
+  }
+  function updateHistoricalAvailability(result){
+    const start=result?.historical_options_start;
+    if(typeof start!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(start))return;
+    historicalOptionsStart=start;$('date').min=start;
+    if($('historicalAvailability'))$('historicalAvailability').textContent=`Alpaca historical options: earliest verified coverage ${start}. Individual sessions may have missing data.`;
+  }
   function redrawWithCrosshair(){if(!renderedSeries)return;drawPrice(renderedSeries);drawZ(renderedSeries);drawRvol(renderedSeries,renderedRvol);drawCrosshair(renderedSeries,crosshairIndex);updateLatestZ()}
   function updateCrosshair(event){
     if(!renderedSeries)return;const canvas=event.currentTarget,rect=canvas.getBoundingClientRect(),x=Math.max(10,Math.min(canvas.clientWidth-10,event.clientX-rect.left)),l=10,r=canvas.clientWidth-10,plotR=Math.max(l+80,r-58),{plotRight}=chartLayout(renderedSeries,l,plotR);
     crosshairIndex=Math.max(0,Math.min(renderedSeries.length-1,Math.round((x-l)/Math.max(1,plotRight-l)*(renderedSeries.length-1))));redrawWithCrosshair();
   }
   function sessionRegime(s){return (s.regime==='UNKNOWN'&&cachedRegimes[s.date])||s.regime||'UNKNOWN'}
-  function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');const liveSelected=current===etDate();const placeholder=liveSelected?'Today (live — not cached)':'Select a cached session';picker.innerHTML=`<option value="">${placeholder}</option>`+visible.map(s=>`<option value="${s.date}">${s.date} · ${sessionRegime(s)}</option>`).join('');picker.value=visible.some(s=>s.date===current)?current:''}
-  async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){sessions=result.sessions;renderSessions()}}catch(_) {}}
+  function renderSessions(){const filter=$('regimeFilter').value;const current=$('date').value;const visible=sessions.filter(s=>s.date<etDate()&&(!historicalOptionsStart||s.date>=historicalOptionsStart)&&(filter==='ALL'||sessionRegime(s)===filter));const picker=$('sessionPicker');const liveSelected=current===etDate();const placeholder=liveSelected?'Today (live — not cached)':'Select a cached session';picker.innerHTML=`<option value="">${placeholder}</option>`+visible.map(s=>`<option value="${s.date}">${s.date} · ${sessionRegime(s)}</option>`).join('');picker.value=visible.some(s=>s.date===current)?current:''}
+  async function refreshSessions(){if(!sessionsUrl)return;try{const response=await fetch(sessionsUrl);const result=await response.json();if(response.ok&&Array.isArray(result.sessions)){updateHistoricalAvailability(result);sessions=result.sessions;renderSessions()}}catch(_) {}}
   async function heartbeat(){if(!cfg.presenceUrl)return;try{await fetch(cfg.presenceUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId})})}catch(_){}}
   async function activate(){const code=$('activationCode').value.trim();if(!code){status('Enter your Whop license key or complimentary activation code.');return}$('activate').disabled=true;status('Checking live access…');try{const response=await fetch(activationUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({activation_code:code})});const result=await response.json();if(!response.ok)throw new Error(result.error||'activation failed');localStorage.setItem(liveTokenKey,result.access_token);localStorage.setItem(liveExpiryKey,String(Date.parse(result.expires_at)));if(result.license_expires_at)localStorage.setItem(liveLicenseExpiryKey,String(Date.parse(result.license_expires_at)));else localStorage.removeItem(liveLicenseExpiryKey);$('activationCode').value='';updateLiveStatus();status('Live access activated. Select today and press Load session.')}catch(e){status(`Activation error: ${e.message}`)}finally{$('activate').disabled=false}}
   async function load(options={}){
@@ -231,6 +244,7 @@
     // that mode.
     if(!isLiveDate){$('rvolSection').hidden=true;renderedRvol=[];$('exzSnapshotMeta').textContent='Historical session';stopLiveQuote();}
     if(date>etDate()){stopLiveRefresh();status('Live access is limited to the current trading day.');return}
+    if(!isLiveDate&&historicalOptionsStart&&date<historicalOptionsStart){clearHistoricalResult();status(`Historical options data is unavailable for this date. Earliest verified Alpaca coverage: ${historicalOptionsStart}.`);return}
     const token=isLiveDate?liveToken():'';
     if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active EXZ Live entitlement from Foxchase Trading.');return}
     if(!isLiveDate)stopLiveRefresh();
@@ -242,11 +256,13 @@
     try{
       const source=await fetch(`${cfg.connectorUrl}?date=${encodeURIComponent(date)}&offset=${offset}${isLiveDate?'&live=1':''}`);
       const payload=await source.json();
+      if(!isLiveDate)updateHistoricalAvailability(payload);
       if(!source.ok)throw new Error(payload.error||'local connector failed');
       status('Computing the study…');
       const headers={'Content-Type':'application/json','X-ZWAP-Session':sessionId};
       if(isLiveDate)headers.Authorization=`Bearer ${token}`;else if(cfg.computeToken)headers.Authorization=`Bearer ${cfg.computeToken}`;
-      const {rvol_series:alpacaRvolSeries=[],stream_status:streamStatus={},snapshot_timestamp:snapshotTimestamp,...computePayload}=payload;
+      const {rvol_series:alpacaRvolSeries=[],stream_status:streamStatus={},snapshot_timestamp:snapshotTimestamp,historical_atm:historicalAtm,...computePayload}=payload;
+      if(!isLiveDate&&historicalAtm)console.info('[EXZ Historical ATM]',historicalAtm);
       const response=await fetch(computeUrl,{method:'POST',headers,body:JSON.stringify(computePayload)});
       const result=await response.json();
       if(!response.ok){
@@ -303,6 +319,7 @@
       // place, making an obsolete classification look current. Never present
       // stale live data as an active session result.
       if(isLiveDate){$('contract').textContent='—';$('regime').textContent='—';$('latest').textContent='—';}
+      else clearHistoricalResult();
       status(`Error: ${e.message}`)
     }finally{$('load').disabled=false;loadInFlight=false}
   }
