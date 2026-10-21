@@ -27,6 +27,7 @@
   </div>
   <div class="note">Historical view is free and uses your own Alpaca data. Current-day and future sessions require paid live access.</div>
   <div id="historicalAvailability" class="note" aria-live="polite"></div>
+  <div id="historicalOffsetAvailability" class="note" aria-live="polite"></div>
   <div class="toolbar" style="margin-top:10px">
     <label>Whop license key or activation code <input id="activationCode" type="password" autocomplete="off" placeholder="Whop license key or activation code"></label>
     <button id="activate" type="button">Activate live access</button>
@@ -43,6 +44,7 @@
   <section id="rvolSection" class="chart" hidden><h2>SPY 5-minute relative volume</h2><canvas id="rvol" class="study" width="1000" height="240"></canvas><div class="note">Completed five-minute SPY relative-volume readings prefer the Foxchase TradingView alert feed at each timestamp; a missing webhook bar is filled only when the matching local Alpaca bar is available. Available only with an active EXZ Live entitlement.</div></section>
 </main>
 <script src="config.js"></script>
-<script src="app.js?v=20260910-regime-authority-2"></script>
+<script src="historical_offsets.js"></script>
+<script src="app.js?v=20261020-offset-availability"></script>
 </body>
 </html>

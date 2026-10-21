@@ -180,3 +180,18 @@ historical view. Live-session access is a separate permissioned service.
 This project is for research and visualization, not trade execution. Keep API
 credentials, service tokens, and cached market data private, and follow the
 terms of your data provider.
+
+### Optional published historical offset metadata
+
+A session-list provider may include `published_offsets`, an array of integer
+strike offsets whose historical snapshots have passed that provider's validation
+and publication process. The dashboard displays this metadata without changing
+the original −10 through +10 selector or fetching additional market data.
+Missing or invalid metadata is labeled “not reported”; it never means every
+contract is available. Empty metadata means no published offsets. Loading a
+selection still follows the existing connector and calculation validation.
+
+This display hint does not grant live access or change Whop entitlement checks.
+It contains no market observations, credentials or deployment configuration.
+
+Focused check: `node test_historical_offsets.cjs`.
