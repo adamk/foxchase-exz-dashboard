@@ -6,10 +6,15 @@ bars. Quotes are retained separately for the immediate midpoint display.
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+
+# datetime is microsecond-based. Keep the provider fraction for ordering and display.
+_PROVIDER_FRACTION = re.compile(r"(?<=\d{2}:\d{2}:\d{2})[.,](\d+)")
 
 
 def parse_time(value: Any) -> datetime:
@@ -19,10 +24,17 @@ def parse_time(value: Any) -> datetime:
         text = str(value or "").strip()
         if not text:
             raise ValueError("provider timestamp is required")
+        # Python 3.10 accepts only three or six digits in an ISO time fraction.
+        text = _PROVIDER_FRACTION.sub(lambda m: "." + m[1][:6].ljust(6, "0"), text, count=1)
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError("provider timestamp must be timezone-aware")
     return parsed.astimezone(timezone.utc)
+
+
+def _submicrosecond_ns(value: Any) -> int:
+    fraction = _PROVIDER_FRACTION.search(value) if isinstance(value, str) else None
+    return int(fraction[1][6:9].ljust(3, "0")) if fraction else 0
 
 
 def minute_time(value: Any) -> datetime:
@@ -50,6 +62,10 @@ class LiveQuote:
     ask_size: int | None
     provider_timestamp: str
     received_timestamp: str
+    bid_exchange: str | None = None
+    ask_exchange: str | None = None
+    conditions: list[str] | str | None = None
+    tape: str | None = None
 
     @property
     def midpoint(self) -> float | None:
@@ -92,7 +108,7 @@ class TradeMinuteBook:
             self._seen_ids.add(identity)
         self._arrival += 1
         self._events.setdefault((symbol, minute), []).append({
-            "timestamp": stamp,
+            "timestamp": (stamp, _submicrosecond_ns(message["t"])),
             "price": price,
             "size": size,
             "arrival": self._arrival,
@@ -236,23 +252,42 @@ class LiveBarAdapter:
         provider_value = message.get("t")
         relevant = feed == "sip" or (feed == "opra" and symbol == self.option_symbol)
         provider_time = parse_time(provider_value) if provider_value is not None else None
-        if provider_time is not None and relevant:
-            self._advance_watermark(feed, provider_time)
         if kind == "q":
             if not symbol or provider_time is None:
                 raise ValueError("quote symbol and timestamp are required")
+            conditions = message.get("c")
+            if conditions is not None:
+                if feed == "sip" and not (isinstance(conditions, list) and all(isinstance(c, str) for c in conditions)):
+                    raise ValueError("invalid SIP quote conditions")
+                if feed == "opra" and not isinstance(conditions, str):
+                    raise ValueError("invalid OPRA quote conditions")
+            for name in ("bx", "ax", "z"):
+                if message.get(name) is not None and not isinstance(message[name], str):
+                    raise ValueError("invalid quote exchange or tape")
+            provider_stamp = iso_time(provider_time)
+            fraction = _PROVIDER_FRACTION.search(provider_value) if isinstance(provider_value, str) else None
+            if fraction and len(fraction[1]) > 6:
+                provider_stamp = f"{provider_time:%Y-%m-%dT%H:%M:%S}.{fraction[1][:9]}Z"
             quote = LiveQuote(
                 symbol=symbol,
                 bid=float(message["bp"]) if message.get("bp") is not None else None,
                 ask=float(message["ap"]) if message.get("ap") is not None else None,
                 bid_size=int(message["bs"]) if message.get("bs") is not None else None,
                 ask_size=int(message["as"]) if message.get("as") is not None else None,
-                provider_timestamp=iso_time(provider_time),
+                provider_timestamp=provider_stamp,
+                bid_exchange=message.get("bx"),
+                ask_exchange=message.get("ax"),
+                conditions=deepcopy(conditions),
+                tape=message.get("z"),
                 received_timestamp=iso_time(parse_time(received_timestamp)),
             )
+            if relevant:
+                self._advance_watermark(feed, provider_time)
             self.quotes[symbol] = quote
             self.quote_updates += 1
             return self.drain_stabilized()
+        if provider_time is not None and relevant:
+            self._advance_watermark(feed, provider_time)
         if feed == "sip" and kind in {"b", "u"} and symbol == "SPY":
             row = self._stock_bar(message)
             minute = row_time(row)
