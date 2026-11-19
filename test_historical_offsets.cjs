@@ -1,0 +1,10 @@
+const assert=require('assert'),{describe}=require('./historical_offsets.js');
+assert.strictEqual(describe([1,-2,0,1]),'Published historical offsets: -2, 0, +1. Other offsets may be unavailable.');
+assert.match(describe([]),/^No published/);
+for(const v of [undefined,null,{},['0'],[11],[-11],[0,NaN],[0.5]])assert.match(describe(v),/not reported/);
+const a=[-10,10];describe(a);assert.deepStrictEqual(a,[-10,10]);
+const fs=require('fs'),src=fs.readFileSync('app.js','utf8'),html=fs.readFileSync('index.html','utf8');
+assert(html.includes('min="-10" max="10"'));
+for(const id of ['activationCode','activate','liveStatus'])assert(html.includes('id="'+id+'"'));
+assert(src.includes("if(isLiveDate&&!token){stopLiveRefresh();status('Current-day access requires an active EXZ Live entitlement from Foxchase Trading.');return}"));
+console.log('Offset metadata positive/negative cases, immutable input, selector and licensing guards PASS');
