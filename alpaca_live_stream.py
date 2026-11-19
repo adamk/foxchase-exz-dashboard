@@ -31,10 +31,16 @@ class StreamError(RuntimeError):
     """A stream diagnostic safe to include in dashboard status."""
 
 
-def _check_subscription(message, requested):
-    if any(value for name, value in message.items() if name != "T" and name not in requested):
+def _check_subscription(feed, message, requested):
+    expected = requested.copy()
+    if feed == "sip":
+        # Alpaca includes these channels automatically for subscribed stock trades.
+        for channel in ("corrections", "cancelErrors"):
+            if message.get(channel, []) != []:
+                expected[channel] = requested.get("trades", [])
+    if any(value for name, value in message.items() if name != "T" and name not in expected):
         raise StreamError("unexpected subscription channel")
-    for channel, symbols in requested.items():
+    for channel, symbols in expected.items():
         if channel == "action":
             continue
         actual = message.get(channel)
@@ -127,13 +133,13 @@ class AlpacaLiveStream:
                 acknowledgement = await asyncio.wait_for(anext(messages), timeout=10)
                 if acknowledgement.get("T") != "subscription":
                     raise StreamError("missing subscription acknowledgement")
-                _check_subscription(acknowledgement, requested)
+                _check_subscription(feed, acknowledgement, requested)
                 await status("subscribed")
 
                 stage = "market data"
                 async for message in messages:
                     if message.get("T") == "subscription":
-                        _check_subscription(message, requested)
+                        _check_subscription(feed, message, requested)
                         continue
                     result = self._message_handler(feed, message, received_timestamp())
                     if result is not None:

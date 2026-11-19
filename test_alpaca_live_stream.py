@@ -54,6 +54,35 @@ class Socket:
 
 
 class AlpacaStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_documented_sip_trade_acknowledgement(self):
+        # Verbatim request and response from Alpaca's Real-time Stock Data, Trade Corrections.
+        request = {"action": "subscribe", "trades": ["AAPL"]}
+        reply = ('[{"T":"subscription","trades":["AAPL"],"quotes":[],"bars":[],"updatedBars":[],'
+                 '"dailyBars":[],"statuses":[],"lulds":[],"corrections":["AAPL"],"cancelErrors":["AAPL"]}]')
+        trade = {"T": "t", "S": "AAPL", "p": 100, "s": 1}
+        socket = Socket([json.dumps([AUTHENTICATED]), reply, reply, json.dumps([trade])])
+        statuses, received = [], []
+        stream = AlpacaLiveStream("test", "test", lambda _, m, __: received.append(m),
+                                  lambda _, e, __: statuses.append(e))
+        with patch("alpaca_live_stream.subscription", return_value=request), patch("websockets.connect", return_value=socket):
+            await stream.run_once("sip", [], lambda: RECEIVED)
+        self.assertEqual(socket.sent[1], {"action": "subscribe", "trades": ["AAPL"]})
+        self.assertEqual(statuses, ["authenticated", "subscription_sent", "subscribed"])
+        self.assertEqual(received, [trade])
+
+    async def test_sip_rejects_unrequested_symbols_or_channels_on_reacknowledgement(self):
+        ack = dict(acknowledgement("sip"), corrections=["SPY"], cancelErrors=["SPY"])
+        for update in ({"corrections": ["SPY", "AAPL"]}, {"cancelErrors": ["*"]},
+                       {"corrections": ["SPY", "SPY"]}, {"cancelErrors": "SPY"}, {"lulds": ["SPY"]}):
+            with self.subTest(update=update):
+                socket = Socket([json.dumps([AUTHENTICATED]), json.dumps([ack]), json.dumps([{**ack, **update}])])
+                statuses = []
+                stream = AlpacaLiveStream("test", "test", lambda *_: self.fail("unexpected market event"),
+                                          lambda _, e, __: statuses.append(e))
+                with patch("websockets.connect", return_value=socket), self.assertRaises(StreamError):
+                    await stream.run_once("sip", [], lambda: RECEIVED)
+                self.assertIn("subscribed", statuses)
+
     async def test_paired_feeds_confirm_and_finalize_amended_minute(self):
         adapter = LiveBarAdapter(settle_seconds=5)
         adapter.warm_start(payload(), offset=1, cutoff=BASE + timedelta(minutes=1))
@@ -121,6 +150,8 @@ class AlpacaStreamTests(unittest.IsolatedAsyncioTestCase):
     async def test_rejected_frames_never_reach_market_handler(self):
         ack = acknowledgement("opra")
         cases = [
+            ([[AUTHENTICATED], [dict(ack, corrections=[SYMBOL])]], "unexpected subscription channel", False),
+            ([[AUTHENTICATED], [dict(ack, cancelErrors=[SYMBOL])]], "unexpected subscription channel", False),
             ([[{"T": "error", "code": 406, "msg": "untrusted-text"}]], "provider error 406", False),
             ([[AUTHENTICATED], [dict(ack, quotes=["WRONG"])]], "subscription mismatch", False),
             ([[AUTHENTICATED], [dict(ack, bars=["*"])]], "unexpected subscription channel", False),
