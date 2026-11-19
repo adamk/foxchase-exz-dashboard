@@ -11,7 +11,7 @@ from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
-from alpaca_live_stream import AlpacaLiveStream
+from alpaca_live_stream import AlpacaLiveStream, StreamError
 from live_stream_adapter import LiveBarAdapter, iso_time
 from zwap_client import _rvol_series
 
@@ -144,32 +144,32 @@ class LiveRuntime:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                detail = str(exc) if isinstance(exc, StreamError) else "stream unavailable"
                 with self._lock:
                     was_connected = bool(
                         self._adapter is not None and self._adapter.connected.get(feed)
                     )
                     if self._adapter is not None:
                         self._adapter.mark_connection(feed, False)
-                    self._last_error = f"{feed}: {str(exc)[:200]}"
-                self._record("stale", feed=feed, attempt=attempt, error=str(exc)[:200])
+                    self._last_error = f"{feed}: {detail}"
+                self._record("stale", feed=feed, attempt=attempt, error=detail)
                 if was_connected:
                     await self._bounded_repair(f"{feed}_reconnect")
                 await asyncio.sleep(min(10.0, max(1.0, float(attempt))))
 
     async def _handle(self, feed: str, message: dict[str, Any], received: str) -> None:
-        kind = str(message.get("T", ""))
         with self._lock:
-            adapter = self._adapter
-            if adapter is None:
-                return
-            if kind == "subscription":
-                adapter.mark_connection(feed, True)
-                self._last_error = None
-                self._events.append({"event": "connected", "feed": feed, "timestamp": received})
-                self._events = self._events[-100:]
-            adapter.handle(feed, message, received)
+            if self._adapter is not None:
+                self._adapter.handle(feed, message, received)
 
     async def _stream_status(self, feed: str, event: str, received: str) -> None:
+        if event == "subscribed":
+            with self._lock:
+                if self._adapter is not None:
+                    self._adapter.mark_connection(feed, True)
+                    self._last_error = None
+            self._record("connected", feed=feed, received=received)
+            return
         self._record(event, feed=feed, received=received)
 
     async def _bounded_repair(self, reason: str) -> None:
